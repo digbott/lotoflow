@@ -1,0 +1,1151 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+  <meta charset="UTF-8"/>
+  <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+  <title>LotoFlow · Fluxo de Caixa</title>
+
+  <!-- Firebase -->
+  <script type="module">
+    import { initializeApp }   from "https://www.gstatic.com/firebasejs/11.6.0/firebase-app.js";
+    import { getFirestore, doc, getDoc, setDoc, serverTimestamp }
+      from "https://www.gstatic.com/firebasejs/11.6.0/firebase-firestore.js";
+
+    const app = initializeApp({
+      
+  apiKey: "AIzaSyCsQku60SZeMpWBuIDtTE5Jc285zulRDkM",
+  authDomain: "lotoflow-70df5.firebaseapp.com",
+  projectId: "lotoflow-70df5",
+  storageBucket: "lotoflow-70df5.firebasestorage.app",
+  messagingSenderId: "185780430132",
+  appId: "1:185780430132:web:e91a81867ed9f01982f161"
+
+    });
+    const db = getFirestore(app);
+
+    // Expose to global scope for React app
+    window.__db = db;
+    window.firestoreLib = { doc, getDoc, setDoc, serverTimestamp };
+    window.__firebaseReady = true;
+    document.dispatchEvent(new Event("firebaseReady"));
+  </script>
+
+  <!-- React -->
+  <script src="https://unpkg.com/react@18/umd/react.production.min.js"></script>
+  <script src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js"></script>
+  <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
+</head>
+<body>
+  <div id="root"></div>
+
+  <script type="text/babel" data-presets="react">
+    const { useState, useMemo, useEffect, useRef, useCallback } = React;
+
+
+const GOOGLE_FONTS = `@import url('https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;500;600;700;800&family=IBM+Plex+Mono:wght@400;500&display=swap');`;
+
+const DEFAULT_TIPO_FLUXO = { Repasse:"saida", Recolhimento:"saida", Suprimento:"entrada", Vale:"entrada" };
+const DEFAULT_TIPOS = ["Repasse","Recolhimento","Suprimento","Vale"];
+const PESSOAS_SUPRIMENTO_ORIGEM = ["Banco","Outro"];
+const FORMAS_PAG = ["Pix","Boleto","Dinheiro"];
+
+const formatCurrency = (v) => new Intl.NumberFormat("pt-BR",{style:"currency",currency:"BRL"}).format(v||0);
+const today = () => new Date().toISOString().split("T")[0];
+const formatDate = (d) => { if(!d) return "—"; const [y,m,day]=d.split("-"); return `${day}/${m}/${y}`; };
+
+const SEED_DATA = [
+  {id:1,tipo:"saida",  descricao:"Recolhimento",descricao_livre:"",               origem:"Lotérica",destino:"Leumim",  valor:1250,data:"2025-03-01"},
+  {id:2,tipo:"entrada",descricao:"Vale",         descricao_livre:"Vale funcionário",origem:"Lotérica",destino:"Elielma", valor:320, data:"2025-03-03"},
+  {id:3,tipo:"saida",  descricao:"Recolhimento",descricao_livre:"",               origem:"Lotérica",destino:"Leumim",  valor:740, data:"2025-03-04"},
+  {id:4,tipo:"saida",  descricao:"Repasse",      descricao_livre:"",               origem:"Lotérica",destino:"Regiane", valor:1100,data:"2025-03-05"},
+  {id:5,tipo:"entrada",descricao:"Suprimento",   descricao_livre:"",               origem:"Leumim",  destino:"Lotérica",valor:1540,data:"2025-03-06"},
+  {id:6,tipo:"saida",  descricao:"Recolhimento",descricao_livre:"",               origem:"Lotérica",destino:"Leumim",  valor:2100,data:"2025-03-08"},
+  {id:7,tipo:"saida",  descricao:"Repasse",      descricao_livre:"",               origem:"Lotérica",destino:"Elielma", valor:210, data:"2025-03-08"},
+  {id:8,tipo:"entrada",descricao:"Suprimento",   descricao_livre:"Depósito caixa",  origem:"Regiane", destino:"Lotérica",valor:500, data:"2025-03-09"},
+];
+const SEED_DEBITOS = [
+  {id:1,credor:"Thaliny",valor:2000,data:"2025-03-01",descricao:"Empréstimo emergencial",pagamentos:[{id:1,valor:500,data:"2025-03-05",forma:"Pix"}]},
+  {id:2,credor:"Leumim", valor:1500,data:"2025-03-08",descricao:"Cobertura de caixa",    pagamentos:[]},
+];
+const SEED_EMPRESTIMOS = [
+  {id:1,devedor:"Elielma",valor:800,data:"2025-03-03",descricao:"Adiantamento",recebimentos:[{id:1,valor:200,data:"2025-03-10",forma:"Dinheiro"}]},
+];
+
+const styles = `
+  ${GOOGLE_FONTS}
+  *,*::before,*::after{box-sizing:border-box;margin:0;padding:0;min-width:0}
+  :root{
+    --bg:#f3f4f6;--surface:#fff;--surface2:#f9fafb;--surface3:#f3f4f6;
+    --border:#e5e7eb;--border-strong:#d1d5db;
+    --accent:#2563eb;--accent-dim:rgba(37,99,235,.08);--accent-hover:#1d4ed8;
+    --success:#059669;--success-dim:rgba(5,150,105,.08);
+    --danger:#dc2626;--danger-dim:rgba(220,38,38,.07);
+    --warning:#d97706;
+    --text:#111827;--text-secondary:#6b7280;--text-tertiary:#9ca3af;
+    --font:'Plus Jakarta Sans',sans-serif;--font-mono:'IBM Plex Mono',monospace;
+    --radius:8px;--radius-lg:12px;
+    --shadow-sm:0 1px 2px rgba(0,0,0,.05),0 1px 3px rgba(0,0,0,.04);
+    --shadow:0 4px 12px rgba(0,0,0,.08),0 1px 3px rgba(0,0,0,.04);
+    --nav-h:56px;--bnav-h:64px;
+  }
+  html{height:100%}
+  body{background:var(--bg);color:var(--text);font-family:var(--font);font-size:14px;line-height:1.6;-webkit-font-smoothing:antialiased;overflow-x:hidden;width:100%}
+  .app{min-height:100vh;display:flex;flex-direction:column;overflow-x:hidden}
+
+  /* HEADER */
+  .header{background:var(--surface);border-bottom:1px solid var(--border);padding:0 1.5rem;display:flex;align-items:center;gap:.75rem;height:var(--nav-h);position:sticky;top:0;z-index:200;box-shadow:var(--shadow-sm);width:100%}
+  .logo{display:flex;align-items:center;gap:10px;flex-shrink:0}
+  .logo-icon{width:30px;height:30px;flex-shrink:0;background:var(--accent);border-radius:7px;display:flex;align-items:center;justify-content:center;font-size:14px}
+  .logo-text{font-size:.9rem;font-weight:700;color:var(--text);white-space:nowrap}
+  .logo-sub{font-size:.56rem;color:var(--text-tertiary);font-family:var(--font-mono);letter-spacing:.8px;text-transform:uppercase;white-space:nowrap}
+  .nav{display:flex;flex-wrap:nowrap;gap:2px;flex:1;justify-content:center}
+  .nav-btn{padding:.38rem .8rem;background:none;border:none;color:var(--text-secondary);font-family:var(--font);font-size:.8rem;font-weight:500;cursor:pointer;border-radius:6px;transition:background .13s,color .13s;white-space:nowrap;flex-shrink:0}
+  .nav-btn:hover{background:var(--surface3);color:var(--text)}
+  .nav-btn.active{background:var(--accent-dim);color:var(--accent);font-weight:600}
+  .ticker{display:flex;align-items:center;gap:6px;flex-shrink:0;font-family:var(--font-mono);font-size:.66rem;color:var(--text-tertiary)}
+  .dot-live{width:6px;height:6px;border-radius:50%;background:var(--success);animation:pulse 2.5s infinite}
+  @keyframes pulse{0%,100%{opacity:1;transform:scale(1)}50%{opacity:.4;transform:scale(.75)}}
+  .bottom-nav{display:none}
+
+  /* MAIN */
+  .main{flex:1;padding:1.5rem;max-width:1200px;margin:0 auto;width:100%}
+  .section-title{font-size:.62rem;font-family:var(--font-mono);letter-spacing:1.4px;text-transform:uppercase;color:var(--text-tertiary);margin-bottom:.875rem;display:flex;align-items:center;gap:.75rem;font-weight:500}
+  .section-title::after{content:'';flex:1;height:1px;background:var(--border)}
+
+  /* KPI */
+  .kpi-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(160px,1fr));gap:1rem;margin-bottom:1.5rem}
+  .kpi-card{background:var(--surface);border:1px solid var(--border);border-radius:var(--radius-lg);padding:1.125rem 1.25rem;box-shadow:var(--shadow-sm);position:relative;overflow:hidden;transition:box-shadow .2s,transform .2s}
+  .kpi-card:hover{box-shadow:var(--shadow);transform:translateY(-1px)}
+  .kpi-card::before{content:'';position:absolute;top:0;left:0;right:0;height:3px;background:var(--accent-color,var(--accent))}
+  .kpi-label{font-size:.63rem;font-family:var(--font-mono);letter-spacing:1.2px;text-transform:uppercase;color:var(--text-tertiary);margin-bottom:.5rem;font-weight:500}
+  .kpi-value{font-size:1.5rem;font-weight:700;letter-spacing:-.5px;color:var(--text);line-height:1.1}
+  .kpi-sub{font-size:.68rem;color:var(--text-tertiary);margin-top:.35rem;font-family:var(--font-mono)}
+
+  /* FORMS */
+  .form-card{background:var(--surface);border:1px solid var(--border);border-radius:var(--radius-lg);padding:1.25rem;margin-bottom:1.25rem;box-shadow:var(--shadow-sm)}
+  .form-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(155px,1fr));gap:.875rem;align-items:end}
+  .form-group{display:flex;flex-direction:column;gap:.35rem}
+  .form-label{font-size:.72rem;font-weight:600;color:var(--text-secondary)}
+  .form-input,.form-select{background:var(--surface);border:1px solid var(--border-strong);border-radius:var(--radius);color:var(--text);padding:.5rem .8rem;font-family:var(--font);font-size:.84rem;outline:none;width:100%;transition:border-color .15s,box-shadow .15s}
+  .form-input:focus,.form-select:focus{border-color:var(--accent);box-shadow:0 0 0 3px var(--accent-dim)}
+  .form-input::placeholder{color:var(--text-tertiary)}
+  .form-select option{background:var(--surface);color:var(--text)}
+
+  /* BUTTONS */
+  .btn{padding:.5rem 1rem;border-radius:var(--radius);border:none;font-family:var(--font);font-size:.82rem;font-weight:600;cursor:pointer;transition:all .14s ease;display:inline-flex;align-items:center;justify-content:center;gap:.35rem;white-space:nowrap;touch-action:manipulation}
+  .btn-accent{background:var(--accent);color:#fff;box-shadow:0 1px 3px rgba(37,99,235,.25)}
+  .btn-accent:hover{background:var(--accent-hover);transform:translateY(-1px)}
+  .btn-accent:active{transform:translateY(0)}
+  .btn-danger{background:var(--danger-dim);color:var(--danger);border:1px solid rgba(220,38,38,.15)}
+  .btn-danger:hover{background:rgba(220,38,38,.12)}
+  .btn-ghost{background:var(--surface2);color:var(--text-secondary);border:1px solid var(--border)}
+  .btn-ghost:hover{background:var(--surface3);color:var(--text)}
+
+  /* TABLE */
+  .table-card{background:var(--surface);border:1px solid var(--border);border-radius:var(--radius-lg);overflow:hidden;box-shadow:var(--shadow-sm)}
+  .table-scroll{overflow-x:auto;-webkit-overflow-scrolling:touch}
+  .table-scroll table{min-width:480px}
+  .table-header{padding:.875rem 1.25rem;border-bottom:1px solid var(--border);display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:.5rem;background:var(--surface2)}
+  .table-header-title{font-size:.82rem;font-weight:600;color:var(--text)}
+  .table-filters{display:flex;gap:.5rem;flex-wrap:wrap}
+  .filter-input{background:var(--surface);border:1px solid var(--border-strong);border-radius:var(--radius);color:var(--text);padding:.35rem .7rem;font-family:var(--font);font-size:.78rem;outline:none}
+  .filter-input:focus{border-color:var(--accent)}
+  table{width:100%;border-collapse:collapse}
+  th{padding:.625rem 1rem;text-align:left;font-size:.62rem;font-family:var(--font-mono);letter-spacing:1.2px;text-transform:uppercase;color:var(--text-tertiary);font-weight:500;border-bottom:1px solid var(--border);background:var(--surface2);white-space:nowrap}
+  td{padding:.75rem 1rem;font-size:.83rem;border-bottom:1px solid var(--border);color:var(--text);vertical-align:middle}
+  tr:last-child td{border-bottom:none}
+  tr:hover td{background:var(--surface2)}
+  .td-actions{display:flex;gap:.4rem;align-items:center}
+
+  /* BADGES */
+  .badge{display:inline-flex;align-items:center;gap:.25rem;padding:.15rem .5rem;border-radius:99px;font-size:.67rem;font-weight:600;font-family:var(--font-mono);white-space:nowrap}
+  .badge-entrada{background:var(--success-dim);color:var(--success)}
+  .badge-saida{background:var(--danger-dim);color:var(--danger)}
+  .badge-ok{background:rgba(5,150,105,.1);color:var(--success)}
+  .val-entrada{color:var(--success);font-family:var(--font-mono);font-weight:500}
+  .val-saida{color:var(--danger);font-family:var(--font-mono);font-weight:500}
+
+  /* MISC */
+  .empty{text-align:center;padding:3rem 1.5rem;color:var(--text-tertiary);font-size:.8rem;font-family:var(--font-mono)}
+  .progress-track{background:var(--surface3);border-radius:4px;height:6px;overflow:hidden}
+  .progress-bar{height:100%;border-radius:4px;transition:width .5s}
+
+  /* DEBITO CARD */
+  .debito-card{background:var(--surface);border:1px solid var(--border);border-radius:var(--radius-lg);margin-bottom:1rem;box-shadow:var(--shadow-sm);overflow:hidden}
+  .debito-card-header{padding:1rem 1.25rem;display:flex;align-items:center;gap:1rem;flex-wrap:wrap;cursor:pointer}
+  .debito-card-header:hover{background:var(--surface2)}
+  .debito-info{flex:1;min-width:120px}
+  .debito-name{font-weight:700;font-size:.9rem;color:var(--text)}
+  .debito-meta{font-family:var(--font-mono);font-size:.7rem;color:var(--text-tertiary);margin-top:.2rem}
+  .debito-amount{text-align:right;flex-shrink:0}
+  .debito-amount-label{font-family:var(--font-mono);font-size:.7rem;color:var(--text-tertiary)}
+  .debito-amount-value{font-family:var(--font-mono);font-weight:700;font-size:1rem}
+  .debito-progress{flex:0 0 180px;min-width:140px}
+  .debito-progress-labels{display:flex;justify-content:space-between;margin-bottom:.3rem;font-family:var(--font-mono);font-size:.65rem;color:var(--text-tertiary)}
+  .debito-actions{display:flex;gap:.4rem;align-items:center;flex-shrink:0}
+  .debito-body{border-top:1px solid var(--border);padding:1rem 1.25rem}
+  .pag-row{display:flex;align-items:center;gap:.75rem;padding:.5rem 0;border-bottom:1px solid var(--border);flex-wrap:wrap}
+  .pag-row:last-child{border-bottom:none}
+  .sub-tabs{display:flex;gap:.5rem;margin-bottom:1.5rem;flex-wrap:wrap}
+  .sub-tab-btn{padding:.45rem 1.1rem;border-radius:var(--radius);border:1px solid var(--border);cursor:pointer;font-family:var(--font);font-size:.8rem;font-weight:600;background:var(--surface);color:var(--text-secondary);transition:all .15s;touch-action:manipulation}
+  .sub-tab-btn.active{background:var(--accent);color:#fff;border-color:var(--accent)}
+
+  /* RESPONSIVE */
+  @media(max-width:720px){
+    .nav,.ticker{display:none}
+    .logo-sub{display:none}
+    .bottom-nav{display:flex;position:fixed;bottom:0;left:0;right:0;height:var(--bnav-h);background:var(--surface);border-top:1px solid var(--border);box-shadow:0 -2px 12px rgba(0,0,0,.07);z-index:200;padding-bottom:env(safe-area-inset-bottom)}
+    .bnav-btn{flex:1;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:2px;background:none;border:none;cursor:pointer;color:var(--text-tertiary);font-family:var(--font);font-size:.6rem;font-weight:500;padding:.25rem .1rem;transition:color .15s;touch-action:manipulation}
+    .bnav-icon{font-size:1.2rem;line-height:1}
+    .bnav-btn.active{color:var(--accent)}
+    .bnav-dot{display:none}
+    .bnav-btn.active .bnav-dot{display:block;width:4px;height:4px;border-radius:50%;background:var(--accent);margin:1px auto 0}
+    .main{padding:.875rem;padding-bottom:calc(var(--bnav-h) + 1rem)}
+    .header{height:48px;padding:0 1rem}
+    .logo-text{font-size:.85rem}
+    .form-grid{grid-template-columns:1fr 1fr}
+    .kpi-grid{grid-template-columns:1fr 1fr}
+    .debito-progress{flex:0 0 100%}
+    th,td{padding:.55rem .75rem;font-size:.78rem}
+    .kpi-value{font-size:1.25rem}
+  }
+  @media(max-width:420px){
+    .form-grid{grid-template-columns:1fr}
+    .main{padding:.75rem;padding-bottom:calc(var(--bnav-h) + .75rem)}
+  }
+`;
+
+const DEFAULT_ENTIDADES = [
+  {nome:"Lotérica",roles:["origem_destino"]},
+  {nome:"Thaliny", roles:["origem_destino","credor","devedor","operador"]},
+  {nome:"Elielma", roles:["origem_destino","devedor","operador"]},
+  {nome:"Leumim",  roles:["origem_destino","credor","devedor","operador"]},
+  {nome:"Regiane", roles:["origem_destino","credor","devedor","operador"]},
+  {nome:"Banco",   roles:["credor"]},
+];
+
+
+function App() {
+  const [tab, setTab] = useState("dashboard");
+
+  const [transacoes, setTransacoes] = useState(SEED_DATA);
+  const [nextId, setNextId] = useState(SEED_DATA.length + 1);
+  const [filterTipo, setFilterTipo] = useState("todos");
+  const [filterData, setFilterData] = useState("");
+
+  const [tiposList, setTiposList] = useState(DEFAULT_TIPOS);
+  const [tipoFluxo, setTipoFluxo] = useState(DEFAULT_TIPO_FLUXO);
+  const [cadEditTipo, setCadEditTipo] = useState({idx:null,nome:"",fluxo:"saida"});
+  const [cadNewTipo,  setCadNewTipo]  = useState({nome:"",fluxo:"saida"});
+
+  const [entidades, setEntidades] = useState(DEFAULT_ENTIDADES);
+  const [cadEditEnt, setCadEditEnt] = useState({idx:null,nome:"",roles:[]});
+  const [cadNewEnt,  setCadNewEnt]  = useState({nome:"",roles:["origem_destino"]});
+
+  const pessoasList   = entidades.filter(e=>e.roles.includes("origem_destino")).map(e=>e.nome);
+  const credoresList  = entidades.filter(e=>e.roles.includes("credor")).map(e=>e.nome);
+  const devedoresList = entidades.filter(e=>e.roles.includes("devedor")).map(e=>e.nome);
+
+  const [debitos, setDebitos]           = useState(SEED_DEBITOS);
+  const [nextDebitoId, setNextDebitoId] = useState(3);
+  const [nextPagId, setNextPagId]       = useState(10);
+  const [debitoForm, setDebitoForm]     = useState({credor:"",valor:"",data:today(),descricao:""});
+  const [pagForm, setPagForm]           = useState({debitoId:null,valor:"",data:today(),forma:"Pix"});
+  const [expandedDebito, setExpandedDebito] = useState(null);
+
+  const [emprestimos, setEmprestimos]   = useState(SEED_EMPRESTIMOS);
+  const [nextEmpId, setNextEmpId]       = useState(2);
+  const [nextRecId, setNextRecId]       = useState(10);
+  const [empForm, setEmpForm]           = useState({devedor:"",valor:"",data:today(),descricao:""});
+  const [recForm, setRecForm]           = useState({empId:null,valor:"",data:today(),forma:"Pix"});
+  const [expandedEmp, setExpandedEmp]   = useState(null);
+
+  const [debitosSubTab, setDebitosSubTab] = useState("debitosLoterica");
+
+  const [form, setForm] = useState({descricao:"",descricao_livre:"",origem:"",destino:"",valor:"",data:today()});
+
+  const totalEntradas = useMemo(()=>transacoes.filter(t=>t.tipo==="entrada").reduce((s,t)=>s+t.valor,0),[transacoes]);
+  const totalSaidas   = useMemo(()=>transacoes.filter(t=>t.tipo==="saida").reduce((s,t)=>s+t.valor,0),[transacoes]);
+  const saldo = totalEntradas - totalSaidas;
+
+  const filteredTx = useMemo(()=>transacoes
+    .filter(t=>{
+      if(filterTipo!=="todos" && t.tipo!==filterTipo) return false;
+      if(filterData && t.data!==filterData) return false;
+      return true;
+    })
+    .sort((a,b)=>b.data.localeCompare(a.data)),
+  [transacoes,filterTipo,filterData]);
+
+  const computeFluxo = (descricao,origem)=>{
+    if(descricao==="Repasse"||descricao==="Recolhimento") return origem==="Lotérica"?"saida":"entrada";
+    return tipoFluxo[descricao]||"entrada";
+  };
+
+  const handleAdd = ()=>{
+    if(!form.descricao||!form.valor||!form.data) return;
+    const tipoFinal = computeFluxo(form.descricao,form.origem);
+    const destinoFinal =
+      form.descricao==="Suprimento" ? "Lotérica"
+      : form.descricao==="Recolhimento" && form.origem==="Lotérica" ? "Banco"
+      : form.descricao==="Recolhimento" && form.origem!=="Lotérica" ? "Lotérica"
+      : form.destino;
+    const novaT = {...form,tipo:tipoFinal,destino:destinoFinal,id:nextId,valor:parseFloat(form.valor)};
+    const novoId = nextId+1;
+    setTransacoes(prev=>{ const next=[...prev,novaT]; savePatch({transacoes:next,nextId:novoId}); return next; });
+    setNextId(novoId);
+    setForm(f=>({...f,descricao:"",descricao_livre:"",origem:"",destino:"",valor:""}));
+  };
+
+
+  // ── Firestore Sync ─────────────────────────────────────────
+  const [syncStatus, setSyncStatus] = React.useState("carregando");
+  const saveTimerRef = React.useRef(null);
+
+  // Carrega todos os dados ao iniciar
+  React.useEffect(() => {
+    const db = window.__db;
+    if (!db) return;
+    const { doc, getDoc } = window.firestoreLib;
+    getDoc(doc(db, "lotoflow", "dados"))
+      .then(snap => {
+        if (snap.exists()) {
+          const d = snap.data();
+          if (d.transacoes?.length)  { setTransacoes(d.transacoes); setNextId(d.nextId || d.transacoes.length + 1); }
+          if (d.debitos?.length)     { setDebitos(d.debitos); setNextDebitoId(d.nextDebitoId || 3); setNextPagId(d.nextPagId || 10); }
+          if (d.emprestimos?.length) { setEmprestimos(d.emprestimos); setNextEmpId(d.nextEmpId || 2); setNextRecId(d.nextRecId || 10); }
+          if (d.tiposList?.length)   setTiposList(d.tiposList);
+          if (d.tipoFluxo)           setTipoFluxo(d.tipoFluxo);
+          if (d.entidades?.length)   setEntidades(d.entidades);
+        }
+        setSyncStatus("ok");
+      })
+      .catch(() => setSyncStatus("erro"));
+  }, []);
+
+  // Salva patch no Firestore com debounce de 800ms
+  const savePatch = React.useCallback((patch) => {
+    setSyncStatus("salvando");
+    if (saveTimerRef.current) clearTimeout(saveTimerRef.current);
+    saveTimerRef.current = setTimeout(() => {
+      const db = window.__db;
+      if (!db) return;
+      const { doc, setDoc, serverTimestamp } = window.firestoreLib;
+      setDoc(doc(db, "lotoflow", "dados"), { ...patch, updatedAt: serverTimestamp() }, { merge: true })
+        .then(() => setSyncStatus("ok"))
+        .catch(() => setSyncStatus("erro"));
+    }, 800);
+  }, []);
+  // ───────────────────────────────────────────────────────────
+
+  const pagoPorDebito = (d)=>d.pagamentos.reduce((s,p)=>s+p.valor,0);
+  const recPorEmp     = (e)=>e.recebimentos.reduce((s,r)=>s+r.valor,0);
+
+  const TABS = [
+    ["dashboard","📊","Início","Dashboard"],
+    ["lancamentos","➕","Lançar","Lançamentos"],
+    ["historico","📋","Histórico","Histórico"],
+    ["debitos","💳","Contas","Pagar/Receber"],
+    ["cadastros","⚙️","Config","Cadastros"],
+  ];
+
+  return (
+    <>
+      <style>{styles}</style>
+      <div className="app">
+
+        <header className="header">
+          <div className="logo">
+            <div className="logo-icon">🎰</div>
+            <div>
+              <div className="logo-text">LotoFlow</div>
+              <div className="logo-sub">Fluxo de Caixa · Caixa Federal</div>
+            </div>
+          </div>
+          <nav className="nav">
+            {TABS.map(([k,,,l])=>(
+              <button key={k} className={`nav-btn${tab===k?" active":""}`} onClick={()=>setTab(k)}>{l}</button>
+            ))}
+          </nav>
+          <div className="ticker">
+            <span className="dot-live"/>
+            {new Date().toLocaleDateString("pt-BR")}
+          </div>
+          {syncStatus==="carregando" && (
+            <div style={{display:"flex",alignItems:"center",gap:5,flexShrink:0,fontFamily:"var(--font-mono)",fontSize:".66rem",color:"var(--warning)"}}>
+              <span style={{width:6,height:6,borderRadius:"50%",background:"var(--warning)",display:"inline-block"}}/>Carregando...
+            </div>
+          )}
+          {syncStatus==="salvando" && (
+            <div style={{display:"flex",alignItems:"center",gap:5,flexShrink:0,fontFamily:"var(--font-mono)",fontSize:".66rem",color:"var(--accent)"}}>
+              <span style={{width:6,height:6,borderRadius:"50%",background:"var(--accent)",display:"inline-block"}}/>Salvando...
+            </div>
+          )}
+          {syncStatus==="ok" && (
+            <div style={{display:"flex",alignItems:"center",gap:5,flexShrink:0,fontFamily:"var(--font-mono)",fontSize:".66rem",color:"var(--success)"}}>
+              <span style={{width:6,height:6,borderRadius:"50%",background:"var(--success)",display:"inline-block"}}/>Salvo
+            </div>
+          )}
+          {syncStatus==="erro" && (
+            <div style={{display:"flex",alignItems:"center",gap:5,flexShrink:0,fontFamily:"var(--font-mono)",fontSize:".66rem",color:"var(--danger)"}}>
+              <span style={{width:6,height:6,borderRadius:"50%",background:"var(--danger)",display:"inline-block"}}/>Erro
+            </div>
+          )}
+        </header>
+
+        <nav className="bottom-nav">
+          {TABS.map(([k,icon,l])=>(
+            <button key={k} className={`bnav-btn${tab===k?" active":""}`} onClick={()=>setTab(k)}>
+              <span className="bnav-icon">{icon}</span>
+              <span>{l}</span>
+              <span className="bnav-dot"/>
+            </button>
+          ))}
+        </nav>
+
+        <main className="main">
+
+          {/* ══ DASHBOARD ══ */}
+          {tab==="dashboard" && (()=>{
+            const dates=[...new Set(transacoes.map(t=>t.data))].sort((a,b)=>b.localeCompare(a));
+            const lastDate=dates[0];
+            const lastDayTx=lastDate?transacoes.filter(t=>t.data===lastDate).sort((a,b)=>a.id-b.id):[];
+            const lastDaySaldo=lastDayTx.reduce((s,t)=>t.tipo==="entrada"?s+t.valor:s-t.valor,0);
+            return(
+              <>
+                <div className="kpi-grid" style={{maxWidth:380}}>
+                  <div className="kpi-card" style={{"--accent-color":saldo>=0?"var(--accent)":"var(--danger)"}}>
+                    <div className="kpi-label">Saldo Atual</div>
+                    <div className="kpi-value" style={{color:saldo>=0?"var(--accent)":"var(--danger)"}}>{formatCurrency(saldo)}</div>
+                    <div className="kpi-sub">{saldo>=0?"✓ Positivo":"✗ Negativo"}</div>
+                  </div>
+                </div>
+                {lastDate?(
+                  <>
+                    <div className="section-title">Movimentações de {formatDate(lastDate)}</div>
+                    <div className="table-card">
+                      <div className="table-scroll">
+                        <table>
+                          <thead><tr><th>Tipo</th><th>Descrição</th><th>Origem → Destino</th><th>Valor</th></tr></thead>
+                          <tbody>
+                            {lastDayTx.map(t=>(
+                              <tr key={t.id}>
+                                <td>
+                                  <span className={`badge badge-${t.tipo}`}>{t.tipo==="entrada"?"↑ Entrada":"↓ Saída"}</span>
+                                  {" "}<span style={{fontSize:".78rem",color:"var(--text-tertiary)"}}>{t.descricao}</span>
+                                </td>
+                                <td style={{color:"var(--text-tertiary)",fontSize:".82rem"}}>{t.descricao_livre||"—"}</td>
+                                <td style={{fontSize:".8rem",color:"var(--text-tertiary)"}}>{t.origem||"—"} → {t.destino||"—"}</td>
+                                <td className={`val-${t.tipo}`}>{t.tipo==="entrada"?"+":"-"}{formatCurrency(t.valor)}</td>
+                              </tr>
+                            ))}
+                          </tbody>
+                        </table>
+                      </div>
+                      <div style={{padding:".875rem 1.25rem",borderTop:"1px solid var(--border)",display:"flex",justifyContent:"flex-end",alignItems:"center",gap:".75rem",background:"var(--surface2)"}}>
+                        <span style={{fontFamily:"var(--font-mono)",fontSize:".68rem",letterSpacing:"1px",textTransform:"uppercase",color:"var(--text-tertiary)"}}>Saldo do dia</span>
+                        <span style={{fontFamily:"var(--font-mono)",fontSize:"1rem",fontWeight:700,color:lastDaySaldo>=0?"var(--accent)":"var(--danger)"}}>
+                          {lastDaySaldo>=0?"+":""}{formatCurrency(lastDaySaldo)}
+                        </span>
+                      </div>
+                    </div>
+                  </>
+                ):(
+                  <div className="empty">Nenhuma movimentação registrada.</div>
+                )}
+              </>
+            );
+          })()}
+
+          {/* ══ LANÇAMENTOS ══ */}
+          {tab==="lancamentos" && (
+            <>
+              <div className="section-title">Novo Lançamento</div>
+              <div className="form-card">
+                <div className="form-grid">
+                  <div className="form-group">
+                    <label className="form-label">Tipo</label>
+                    <select className="form-select" value={form.descricao} onChange={e=>setForm(f=>({...f,descricao:e.target.value,origem:"",destino:""}))}>
+                      <option value="">Selecione...</option>
+                      {tiposList.map(o=><option key={o}>{o}</option>)}
+                    </select>
+                    {form.descricao&&(()=>{
+                      const fluxo=computeFluxo(form.descricao,form.origem);
+                      return <span style={{fontSize:".68rem",fontFamily:"var(--font-mono)",marginTop:".3rem",color:fluxo==="saida"?"var(--danger)":"var(--success)"}}>{fluxo==="saida"?"↓ Saída":"↑ Entrada"}</span>;
+                    })()}
+                  </div>
+                  <div className="form-group">
+                    <label className="form-label">Descrição livre</label>
+                    <input className="form-input" type="text" placeholder="Observação..." value={form.descricao_livre} onChange={e=>setForm(f=>({...f,descricao_livre:e.target.value}))}/>
+                  </div>
+                  <div className="form-group">
+                    <label className="form-label">Origem</label>
+                    {form.descricao==="Suprimento"
+                      ?<select className="form-select" value={form.origem} onChange={e=>setForm(f=>({...f,origem:e.target.value}))}>
+                          <option value="">Selecione...</option>
+                          {PESSOAS_SUPRIMENTO_ORIGEM.map(p=><option key={p}>{p}</option>)}
+                        </select>
+                      :<select className="form-select" value={form.origem} onChange={e=>{
+                          const val=e.target.value;
+                          const nd=form.descricao==="Recolhimento"&&val!=="Lotérica"?"Lotérica"
+                            :form.descricao==="Recolhimento"&&val==="Lotérica"?"Banco"
+                            :form.destino===val?"":form.destino;
+                          setForm(f=>({...f,origem:val,destino:nd}));
+                        }}>
+                          <option value="">Selecione...</option>
+                          {pessoasList.filter(p=>p!==form.destino).map(p=><option key={p}>{p}</option>)}
+                        </select>
+                    }
+                  </div>
+                  <div className="form-group">
+                    <label className="form-label">Destino</label>
+                    {form.descricao==="Suprimento"
+                      ?<input className="form-input" value="Lotérica" readOnly style={{opacity:.5,cursor:"not-allowed"}}/>
+                      :form.descricao==="Recolhimento"&&form.origem==="Lotérica"
+                      ?<input className="form-input" value="Banco" readOnly style={{opacity:.5,cursor:"not-allowed"}}/>
+                      :form.descricao==="Recolhimento"&&form.origem&&form.origem!=="Lotérica"
+                      ?<input className="form-input" value="Lotérica" readOnly style={{opacity:.5,cursor:"not-allowed"}}/>
+                      :<select className="form-select" value={form.destino} onChange={e=>{
+                          const val=e.target.value;
+                          setForm(f=>({...f,destino:val,origem:f.origem===val?"":f.origem}));
+                        }}>
+                          <option value="">Selecione...</option>
+                          {pessoasList.filter(p=>{
+                            if(p===form.origem) return false;
+                            if(form.descricao==="Repasse") return p!=="Lotérica";
+                            return true;
+                          }).map(p=><option key={p}>{p}</option>)}
+                        </select>
+                    }
+                  </div>
+                  <div className="form-group">
+                    <label className="form-label">Valor (R$)</label>
+                    <input className="form-input" type="number" min="0" step="0.01" placeholder="0,00" value={form.valor} onChange={e=>setForm(f=>({...f,valor:e.target.value}))}/>
+                  </div>
+                  <div className="form-group">
+                    <label className="form-label">Data</label>
+                    <input className="form-input" type="date" value={form.data} onChange={e=>setForm(f=>({...f,data:e.target.value}))}/>
+                  </div>
+                  <div className="form-group">
+                    <label className="form-label">&nbsp;</label>
+                    <button className="btn btn-accent" onClick={handleAdd}>+ Registrar</button>
+                  </div>
+                </div>
+              </div>
+              <div className="section-title">Lançamentos Recentes</div>
+              <div className="table-card">
+                <div className="table-scroll">
+                  <table>
+                    <thead><tr><th>Data</th><th>Tipo</th><th>Descrição</th><th>Origem</th><th>Destino</th><th>Valor</th><th></th></tr></thead>
+                    <tbody>
+                      {[...transacoes].sort((a,b)=>b.data.localeCompare(a.data)).map(t=>(
+                        <tr key={t.id}>
+                          <td style={{fontFamily:"var(--font-mono)",fontSize:".78rem",color:"var(--text-tertiary)"}}>{formatDate(t.data)}</td>
+                          <td>
+                            <span className={`badge badge-${t.tipo}`}>{t.tipo==="entrada"?"↑ Entrada":"↓ Saída"}</span>
+                            {" "}<span style={{fontSize:".78rem",color:"var(--text-tertiary)"}}>{t.descricao}</span>
+                          </td>
+                          <td style={{color:"var(--text-tertiary)",fontSize:".82rem"}}>{t.descricao_livre||"—"}</td>
+                          <td style={{fontSize:".8rem"}}>{t.origem||"—"}</td>
+                          <td style={{fontSize:".8rem"}}>{t.destino||"—"}</td>
+                          <td className={`val-${t.tipo}`}>{t.tipo==="entrada"?"+":"-"}{formatCurrency(t.valor)}</td>
+                          <td><button className="btn btn-danger" style={{padding:".3rem .7rem",fontSize:".75rem"}} onClick={()=>setTransacoes(prev=>{const next=prev.filter(x=>x.id!==t.id);savePatch({transacoes:next});return next;})}>✕</button></td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+              </div>
+            </>
+          )}
+
+          {/* ══ HISTÓRICO ══ */}
+          {tab==="historico" && (()=>{
+            const dates=[...new Set(filteredTx.map(t=>t.data))].sort((a,b)=>b.localeCompare(a));
+            return(
+              <>
+                <div className="section-title">Histórico Completo</div>
+                <div className="table-card">
+                  <div className="table-header">
+                    <span className="table-header-title">Extrato de Movimentações</span>
+                    <div className="table-filters">
+                      <select className="filter-input" value={filterTipo} onChange={e=>setFilterTipo(e.target.value)}>
+                        <option value="todos">Todos</option>
+                        <option value="entrada">Entradas</option>
+                        <option value="saida">Saídas</option>
+                      </select>
+                      <input className="filter-input" type="date" value={filterData} onChange={e=>setFilterData(e.target.value)}/>
+                      {filterData&&<button className="btn btn-ghost" style={{padding:".35rem .8rem",fontSize:".75rem"}} onClick={()=>setFilterData("")}>✕</button>}
+                    </div>
+                  </div>
+                  <div className="table-scroll">
+                    {filteredTx.length===0
+                      ?<div className="empty">Nenhuma transação encontrada.</div>
+                      :dates.map(date=>{
+                          const dayTx=filteredTx.filter(t=>t.data===date);
+                          const daySaldo=dayTx.reduce((s,t)=>t.tipo==="entrada"?s+t.valor:s-t.valor,0);
+                          return(
+                            <div key={date}>
+                              <div style={{padding:".45rem 1rem",background:"var(--surface2)",borderBottom:"1px solid var(--border)"}}>
+                                <span style={{fontFamily:"var(--font-mono)",fontSize:".68rem",letterSpacing:"1.2px",textTransform:"uppercase",color:"var(--text-tertiary)"}}>{formatDate(date)}</span>
+                              </div>
+                              <table style={{width:"100%",borderCollapse:"collapse",minWidth:480}}>
+                                <tbody>
+                                  {dayTx.map(t=>(
+                                    <tr key={t.id}>
+                                      <td style={{padding:".7rem 1rem",whiteSpace:"nowrap"}}>
+                                        <span className={`badge badge-${t.tipo}`}>{t.tipo==="entrada"?"↑ Entrada":"↓ Saída"}</span>
+                                        {" "}<span style={{fontSize:".78rem",color:"var(--text-tertiary)"}}>{t.descricao}</span>
+                                      </td>
+                                      <td style={{padding:".7rem .5rem",color:"var(--text-tertiary)",fontSize:".82rem"}}>{t.descricao_livre||"—"}</td>
+                                      <td style={{padding:".7rem .5rem",fontSize:".8rem",color:"var(--text-tertiary)",whiteSpace:"nowrap"}}>{t.origem||"—"} → {t.destino||"—"}</td>
+                                      <td style={{padding:".7rem 1rem",textAlign:"right",fontFamily:"var(--font-mono)",fontWeight:600,whiteSpace:"nowrap"}} className={`val-${t.tipo}`}>
+                                        {t.tipo==="entrada"?"+":"-"}{formatCurrency(t.valor)}
+                                      </td>
+                                    </tr>
+                                  ))}
+                                </tbody>
+                              </table>
+                              <div style={{padding:".6rem 1rem",borderTop:"1px solid var(--border)",borderBottom:"1px solid var(--border)",display:"flex",justifyContent:"flex-end",alignItems:"center",gap:".75rem",background:"var(--surface2)"}}>
+                                <span style={{fontFamily:"var(--font-mono)",fontSize:".65rem",letterSpacing:"1px",textTransform:"uppercase",color:"var(--text-tertiary)"}}>Saldo do dia</span>
+                                <span style={{fontFamily:"var(--font-mono)",fontSize:".9rem",fontWeight:700,color:daySaldo>=0?"var(--accent)":"var(--danger)"}}>
+                                  {daySaldo>=0?"+":""}{formatCurrency(daySaldo)}
+                                </span>
+                              </div>
+                            </div>
+                          );
+                        })
+                    }
+                  </div>
+                </div>
+              </>
+            );
+          })()}
+
+          {/* ══ PAGAR E RECEBER ══ */}
+          {tab==="debitos" && (()=>{
+            const totalDevido     = debitos.reduce((s,d)=>s+Math.max(0,d.valor-pagoPorDebito(d)),0);
+            const totalEmprestado = debitos.reduce((s,d)=>s+d.valor,0);
+            const totalPago       = debitos.reduce((s,d)=>s+pagoPorDebito(d),0);
+            const debitosAbertos  = debitos.filter(d=>pagoPorDebito(d)<d.valor);
+            const debitosQuit     = debitos.filter(d=>pagoPorDebito(d)>=d.valor);
+            const totalAReceber   = emprestimos.reduce((s,e)=>s+Math.max(0,e.valor-recPorEmp(e)),0);
+            const totalEmpOut     = emprestimos.reduce((s,e)=>s+e.valor,0);
+            const totalRecebido   = emprestimos.reduce((s,e)=>s+recPorEmp(e),0);
+            const empsAbertos     = emprestimos.filter(e=>recPorEmp(e)<e.valor);
+            const empsQuit        = emprestimos.filter(e=>recPorEmp(e)>=e.valor);
+            return(
+              <>
+                <div className="sub-tabs">
+                  {[["debitosLoterica","💸 Lotérica Deve"],["emprestimosLoterica","💰 Lotérica Emprestou"]].map(([k,l])=>(
+                    <button key={k} className={`sub-tab-btn${debitosSubTab===k?" active":""}`} onClick={()=>setDebitosSubTab(k)}>{l}</button>
+                  ))}
+                </div>
+
+                {debitosSubTab==="debitosLoterica"&&<>
+                  <div className="kpi-grid">
+                    <div className="kpi-card" style={{"--accent-color":"var(--danger)"}}>
+                      <div className="kpi-label">Em Aberto</div>
+                      <div className="kpi-value" style={{color:"var(--danger)"}}>{formatCurrency(totalDevido)}</div>
+                      <div className="kpi-sub">{debitosAbertos.length} débito(s) pendente(s)</div>
+                    </div>
+                    <div className="kpi-card" style={{"--accent-color":"var(--warning)"}}>
+                      <div className="kpi-label">Total Recebido</div>
+                      <div className="kpi-value" style={{color:"var(--warning)"}}>{formatCurrency(totalEmprestado)}</div>
+                      <div className="kpi-sub">{debitos.length} empréstimo(s)</div>
+                    </div>
+                    <div className="kpi-card" style={{"--accent-color":"var(--success)"}}>
+                      <div className="kpi-label">Total Pago</div>
+                      <div className="kpi-value" style={{color:"var(--success)"}}>{formatCurrency(totalPago)}</div>
+                      <div className="kpi-sub">{debitosQuit.length} quitado(s)</div>
+                    </div>
+                  </div>
+
+                  <div className="section-title">Registrar Empréstimo Recebido</div>
+                  <div className="form-card">
+                    <div className="form-grid">
+                      <div className="form-group">
+                        <label className="form-label">Credor</label>
+                        <select className="form-select" value={debitoForm.credor} onChange={e=>setDebitoForm(f=>({...f,credor:e.target.value}))}>
+                          <option value="">Selecione...</option>
+                          {credoresList.map(p=><option key={p}>{p}</option>)}
+                        </select>
+                      </div>
+                      <div className="form-group">
+                        <label className="form-label">Valor (R$)</label>
+                        <input className="form-input" type="number" min="0" step="0.01" placeholder="0,00" value={debitoForm.valor} onChange={e=>setDebitoForm(f=>({...f,valor:e.target.value}))}/>
+                      </div>
+                      <div className="form-group">
+                        <label className="form-label">Data</label>
+                        <input className="form-input" type="date" value={debitoForm.data} onChange={e=>setDebitoForm(f=>({...f,data:e.target.value}))}/>
+                      </div>
+                      <div className="form-group">
+                        <label className="form-label">Descrição</label>
+                        <input className="form-input" type="text" placeholder="Motivo..." value={debitoForm.descricao} onChange={e=>setDebitoForm(f=>({...f,descricao:e.target.value}))}/>
+                      </div>
+                      <div className="form-group">
+                        <label className="form-label">&nbsp;</label>
+                        <button className="btn btn-accent" onClick={()=>{
+                          if(!debitoForm.credor||!debitoForm.valor||!debitoForm.data) return;
+                          const nd={id:nextDebitoId,credor:debitoForm.credor,valor:parseFloat(debitoForm.valor),data:debitoForm.data,descricao:debitoForm.descricao,pagamentos:[]};
+                          const nDId=nextDebitoId+1;
+                          setDebitos(prev=>{const next=[...prev,nd];savePatch({debitos:next,nextDebitoId:nDId});return next;});
+                          setNextDebitoId(nDId);
+                          setDebitoForm({credor:"",valor:"",data:today(),descricao:""});
+                        }}>+ Registrar</button>
+                      </div>
+                    </div>
+                  </div>
+
+                  <div className="section-title">Débitos em Aberto</div>
+                  {debitosAbertos.length===0&&<div className="empty" style={{marginBottom:"1.5rem"}}>Nenhum débito em aberto. 🎉</div>}
+                  {debitosAbertos.map(d=>{
+                    const pago=pagoPorDebito(d);
+                    const restante=d.valor-pago;
+                    const pct=Math.min(100,(pago/d.valor)*100);
+                    const isExp=expandedDebito===d.id;
+                    return(
+                      <div key={d.id} className="debito-card">
+                        <div className="debito-card-header" onClick={()=>setExpandedDebito(isExp?null:d.id)}>
+                          <div className="debito-info">
+                            <div className="debito-name">{d.credor}</div>
+                            <div className="debito-meta">{formatDate(d.data)}{d.descricao?` · ${d.descricao}`:""}</div>
+                          </div>
+                          <div className="debito-amount">
+                            <div className="debito-amount-label">Restante</div>
+                            <div className="debito-amount-value" style={{color:"var(--danger)"}}>{formatCurrency(restante)}</div>
+                          </div>
+                          <div className="debito-progress">
+                            <div className="debito-progress-labels">
+                              <span>Pago {formatCurrency(pago)} / {formatCurrency(d.valor)}</span>
+                              <span style={{color:"var(--accent)"}}>{pct.toFixed(0)}%</span>
+                            </div>
+                            <div className="progress-track"><div className="progress-bar" style={{width:`${pct}%`,background:"var(--accent)"}}/></div>
+                          </div>
+                          <div className="debito-actions">
+                            <span style={{fontFamily:"var(--font-mono)",fontSize:".7rem",color:"var(--text-tertiary)"}}>{isExp?"▲":"▼"}</span>
+                            <button className="btn btn-danger" style={{padding:".3rem .7rem",fontSize:".75rem"}} onClick={ev=>{ev.stopPropagation();setDebitos(prev=>{const next=prev.filter(x=>x.id!==d.id);savePatch({debitos:next});return next;});}}>✕</button>
+                          </div>
+                        </div>
+                        {isExp&&(
+                          <div className="debito-body">
+                            {d.pagamentos.length>0&&(
+                              <div style={{marginBottom:"1rem"}}>
+                                <div className="kpi-label" style={{marginBottom:".5rem"}}>Pagamentos realizados</div>
+                                {d.pagamentos.map(p=>(
+                                  <div key={p.id} className="pag-row">
+                                    <span style={{fontFamily:"var(--font-mono)",fontSize:".75rem",color:"var(--text-tertiary)",minWidth:75}}>{formatDate(p.data)}</span>
+                                    <span className="badge" style={{background:"var(--success-dim)",color:"var(--success)"}}>{p.forma}</span>
+                                    <span style={{fontFamily:"var(--font-mono)",fontWeight:600,color:"var(--success)",marginLeft:"auto"}}>{formatCurrency(p.valor)}</span>
+                                    <button className="btn btn-danger" style={{padding:".2rem .5rem",fontSize:".7rem"}} onClick={()=>setDebitos(prev=>{const next=prev.map(x=>x.id===d.id?{...x,pagamentos:x.pagamentos.filter(pg=>pg.id!==p.id)}:x);savePatch({debitos:next});return next;})}>✕</button>
+                                  </div>
+                                ))}
+                              </div>
+                            )}
+                            <div className="kpi-label" style={{marginBottom:".5rem"}}>Registrar pagamento</div>
+                            <div className="form-grid">
+                              <div className="form-group">
+                                <label className="form-label">Valor</label>
+                                <input className="form-input" type="number" min="0" step="0.01" placeholder="0,00"
+                                  value={pagForm.debitoId===d.id?pagForm.valor:""}
+                                  onChange={e=>setPagForm({debitoId:d.id,valor:e.target.value,data:pagForm.debitoId===d.id?pagForm.data:today(),forma:pagForm.debitoId===d.id?pagForm.forma:"Pix"})}/>
+                              </div>
+                              <div className="form-group">
+                                <label className="form-label">Data</label>
+                                <input className="form-input" type="date"
+                                  value={pagForm.debitoId===d.id?pagForm.data:today()}
+                                  onChange={e=>setPagForm(f=>({...f,debitoId:d.id,data:e.target.value}))}/>
+                              </div>
+                              <div className="form-group">
+                                <label className="form-label">Forma</label>
+                                <select className="form-select"
+                                  value={pagForm.debitoId===d.id?pagForm.forma:"Pix"}
+                                  onChange={e=>setPagForm(f=>({...f,debitoId:d.id,forma:e.target.value}))}>
+                                  {FORMAS_PAG.map(f=><option key={f}>{f}</option>)}
+                                </select>
+                              </div>
+                              <div className="form-group">
+                                <label className="form-label">&nbsp;</label>
+                                <button className="btn btn-accent" onClick={()=>{
+                                  if(pagForm.debitoId!==d.id||!pagForm.valor) return;
+                                  const nPId=nextPagId+1;
+                                  setDebitos(prev=>{const next=prev.map(x=>x.id===d.id?{...x,pagamentos:[...x.pagamentos,{id:nextPagId,valor:parseFloat(pagForm.valor),data:pagForm.data,forma:pagForm.forma}]}:x);savePatch({debitos:next,nextPagId:nPId});return next;});
+                                  setNextPagId(nPId);
+                                  setPagForm({debitoId:null,valor:"",data:today(),forma:"Pix"});
+                                }}>+ Pagar</button>
+                              </div>
+                            </div>
+                          </div>
+                        )}
+                      </div>
+                    );
+                  })}
+
+                  {debitosQuit.length>0&&<>
+                    <div className="section-title" style={{marginTop:".5rem"}}>Quitados</div>
+                    <div className="table-card">
+                      <div className="table-scroll">
+                        <table>
+                          <thead><tr><th>Credor</th><th>Data</th><th>Descrição</th><th>Valor</th><th>Status</th><th></th></tr></thead>
+                          <tbody>
+                            {debitosQuit.map(d=>(
+                              <tr key={d.id}>
+                                <td style={{fontWeight:600}}>{d.credor}</td>
+                                <td style={{fontFamily:"var(--font-mono)",fontSize:".78rem",color:"var(--text-tertiary)"}}>{formatDate(d.data)}</td>
+                                <td style={{color:"var(--text-tertiary)",fontSize:".82rem"}}>{d.descricao||"—"}</td>
+                                <td style={{fontFamily:"var(--font-mono)",fontWeight:600}}>{formatCurrency(d.valor)}</td>
+                                <td><span className="badge badge-ok">✓ Quitado</span></td>
+                                <td><button className="btn btn-danger" style={{padding:".3rem .7rem",fontSize:".75rem"}} onClick={()=>setDebitos(prev=>{const next=prev.filter(x=>x.id!==d.id);savePatch({debitos:next});return next;})}>✕</button></td>
+                              </tr>
+                            ))}
+                          </tbody>
+                        </table>
+                      </div>
+                    </div>
+                  </>}
+                </>}
+
+                {debitosSubTab==="emprestimosLoterica"&&<>
+                  <div className="kpi-grid">
+                    <div className="kpi-card" style={{"--accent-color":"var(--warning)"}}>
+                      <div className="kpi-label">A Receber</div>
+                      <div className="kpi-value" style={{color:"var(--warning)"}}>{formatCurrency(totalAReceber)}</div>
+                      <div className="kpi-sub">{empsAbertos.length} empréstimo(s) em aberto</div>
+                    </div>
+                    <div className="kpi-card" style={{"--accent-color":"var(--accent)"}}>
+                      <div className="kpi-label">Total Emprestado</div>
+                      <div className="kpi-value" style={{color:"var(--accent)"}}>{formatCurrency(totalEmpOut)}</div>
+                      <div className="kpi-sub">{emprestimos.length} empréstimo(s)</div>
+                    </div>
+                    <div className="kpi-card" style={{"--accent-color":"var(--success)"}}>
+                      <div className="kpi-label">Total Recebido</div>
+                      <div className="kpi-value" style={{color:"var(--success)"}}>{formatCurrency(totalRecebido)}</div>
+                      <div className="kpi-sub">{empsQuit.length} quitado(s)</div>
+                    </div>
+                  </div>
+
+                  <div className="section-title">Registrar Empréstimo Concedido</div>
+                  <div className="form-card">
+                    <div className="form-grid">
+                      <div className="form-group">
+                        <label className="form-label">Devedor</label>
+                        <select className="form-select" value={empForm.devedor} onChange={e=>setEmpForm(f=>({...f,devedor:e.target.value}))}>
+                          <option value="">Selecione...</option>
+                          {devedoresList.map(p=><option key={p}>{p}</option>)}
+                        </select>
+                      </div>
+                      <div className="form-group">
+                        <label className="form-label">Valor (R$)</label>
+                        <input className="form-input" type="number" min="0" step="0.01" placeholder="0,00" value={empForm.valor} onChange={e=>setEmpForm(f=>({...f,valor:e.target.value}))}/>
+                      </div>
+                      <div className="form-group">
+                        <label className="form-label">Data</label>
+                        <input className="form-input" type="date" value={empForm.data} onChange={e=>setEmpForm(f=>({...f,data:e.target.value}))}/>
+                      </div>
+                      <div className="form-group">
+                        <label className="form-label">Descrição</label>
+                        <input className="form-input" type="text" placeholder="Motivo..." value={empForm.descricao} onChange={e=>setEmpForm(f=>({...f,descricao:e.target.value}))}/>
+                      </div>
+                      <div className="form-group">
+                        <label className="form-label">&nbsp;</label>
+                        <button className="btn btn-accent" onClick={()=>{
+                          if(!empForm.devedor||!empForm.valor||!empForm.data) return;
+                          const ne={id:nextEmpId,devedor:empForm.devedor,valor:parseFloat(empForm.valor),data:empForm.data,descricao:empForm.descricao,recebimentos:[]};
+                          const nEId=nextEmpId+1;
+                          setEmprestimos(prev=>{const next=[...prev,ne];savePatch({emprestimos:next,nextEmpId:nEId});return next;});
+                          setNextEmpId(nEId);
+                          setEmpForm({devedor:"",valor:"",data:today(),descricao:""});
+                        }}>+ Registrar</button>
+                      </div>
+                    </div>
+                  </div>
+
+                  <div className="section-title">Empréstimos em Aberto</div>
+                  {empsAbertos.length===0&&<div className="empty" style={{marginBottom:"1.5rem"}}>Nenhum empréstimo em aberto.</div>}
+                  {empsAbertos.map(e=>{
+                    const rec=recPorEmp(e);
+                    const restante=e.valor-rec;
+                    const pct=Math.min(100,(rec/e.valor)*100);
+                    const isExp=expandedEmp===e.id;
+                    return(
+                      <div key={e.id} className="debito-card">
+                        <div className="debito-card-header" onClick={()=>setExpandedEmp(isExp?null:e.id)}>
+                          <div className="debito-info">
+                            <div className="debito-name">{e.devedor}</div>
+                            <div className="debito-meta">{formatDate(e.data)}{e.descricao?` · ${e.descricao}`:""}</div>
+                          </div>
+                          <div className="debito-amount">
+                            <div className="debito-amount-label">A Receber</div>
+                            <div className="debito-amount-value" style={{color:"var(--warning)"}}>{formatCurrency(restante)}</div>
+                          </div>
+                          <div className="debito-progress">
+                            <div className="debito-progress-labels">
+                              <span>Recebido {formatCurrency(rec)} / {formatCurrency(e.valor)}</span>
+                              <span style={{color:"var(--warning)"}}>{pct.toFixed(0)}%</span>
+                            </div>
+                            <div className="progress-track"><div className="progress-bar" style={{width:`${pct}%`,background:"var(--warning)"}}/></div>
+                          </div>
+                          <div className="debito-actions">
+                            <span style={{fontFamily:"var(--font-mono)",fontSize:".7rem",color:"var(--text-tertiary)"}}>{isExp?"▲":"▼"}</span>
+                            <button className="btn btn-danger" style={{padding:".3rem .7rem",fontSize:".75rem"}} onClick={ev=>{ev.stopPropagation();setEmprestimos(prev=>{const next=prev.filter(x=>x.id!==e.id);savePatch({emprestimos:next});return next;});}}>✕</button>
+                          </div>
+                        </div>
+                        {isExp&&(
+                          <div className="debito-body">
+                            {e.recebimentos.length>0&&(
+                              <div style={{marginBottom:"1rem"}}>
+                                <div className="kpi-label" style={{marginBottom:".5rem"}}>Recebimentos registrados</div>
+                                {e.recebimentos.map(r=>(
+                                  <div key={r.id} className="pag-row">
+                                    <span style={{fontFamily:"var(--font-mono)",fontSize:".75rem",color:"var(--text-tertiary)",minWidth:75}}>{formatDate(r.data)}</span>
+                                    <span className="badge" style={{background:"rgba(217,119,6,.1)",color:"var(--warning)"}}>{r.forma}</span>
+                                    <span style={{fontFamily:"var(--font-mono)",fontWeight:600,color:"var(--warning)",marginLeft:"auto"}}>{formatCurrency(r.valor)}</span>
+                                    <button className="btn btn-danger" style={{padding:".2rem .5rem",fontSize:".7rem"}} onClick={()=>setEmprestimos(prev=>{const next=prev.map(x=>x.id===e.id?{...x,recebimentos:x.recebimentos.filter(r2=>r2.id!==r.id)}:x);savePatch({emprestimos:next});return next;})}>✕</button>
+                                  </div>
+                                ))}
+                              </div>
+                            )}
+                            <div className="kpi-label" style={{marginBottom:".5rem"}}>Registrar recebimento</div>
+                            <div className="form-grid">
+                              <div className="form-group">
+                                <label className="form-label">Valor</label>
+                                <input className="form-input" type="number" min="0" step="0.01" placeholder="0,00"
+                                  value={recForm.empId===e.id?recForm.valor:""}
+                                  onChange={ev=>setRecForm({empId:e.id,valor:ev.target.value,data:recForm.empId===e.id?recForm.data:today(),forma:recForm.empId===e.id?recForm.forma:"Pix"})}/>
+                              </div>
+                              <div className="form-group">
+                                <label className="form-label">Data</label>
+                                <input className="form-input" type="date"
+                                  value={recForm.empId===e.id?recForm.data:today()}
+                                  onChange={ev=>setRecForm(f=>({...f,empId:e.id,data:ev.target.value}))}/>
+                              </div>
+                              <div className="form-group">
+                                <label className="form-label">Forma</label>
+                                <select className="form-select"
+                                  value={recForm.empId===e.id?recForm.forma:"Pix"}
+                                  onChange={ev=>setRecForm(f=>({...f,empId:e.id,forma:ev.target.value}))}>
+                                  {FORMAS_PAG.map(f=><option key={f}>{f}</option>)}
+                                </select>
+                              </div>
+                              <div className="form-group">
+                                <label className="form-label">&nbsp;</label>
+                                <button className="btn btn-accent" onClick={()=>{
+                                  if(recForm.empId!==e.id||!recForm.valor) return;
+                                  const nRId=nextRecId+1;
+                                  setEmprestimos(prev=>{const next=prev.map(x=>x.id===e.id?{...x,recebimentos:[...x.recebimentos,{id:nextRecId,valor:parseFloat(recForm.valor),data:recForm.data,forma:recForm.forma}]}:x);savePatch({emprestimos:next,nextRecId:nRId});return next;});
+                                  setNextRecId(nRId);
+                                  setRecForm({empId:null,valor:"",data:today(),forma:"Pix"});
+                                }}>+ Receber</button>
+                              </div>
+                            </div>
+                          </div>
+                        )}
+                      </div>
+                    );
+                  })}
+
+                  {empsQuit.length>0&&<>
+                    <div className="section-title" style={{marginTop:".5rem"}}>Quitados</div>
+                    <div className="table-card">
+                      <div className="table-scroll">
+                        <table>
+                          <thead><tr><th>Devedor</th><th>Data</th><th>Descrição</th><th>Valor</th><th>Status</th><th></th></tr></thead>
+                          <tbody>
+                            {empsQuit.map(e=>(
+                              <tr key={e.id}>
+                                <td style={{fontWeight:600}}>{e.devedor}</td>
+                                <td style={{fontFamily:"var(--font-mono)",fontSize:".78rem",color:"var(--text-tertiary)"}}>{formatDate(e.data)}</td>
+                                <td style={{color:"var(--text-tertiary)",fontSize:".82rem"}}>{e.descricao||"—"}</td>
+                                <td style={{fontFamily:"var(--font-mono)",fontWeight:600}}>{formatCurrency(e.valor)}</td>
+                                <td><span className="badge badge-ok">✓ Quitado</span></td>
+                                <td><button className="btn btn-danger" style={{padding:".3rem .7rem",fontSize:".75rem"}} onClick={()=>setEmprestimos(prev=>{const next=prev.filter(x=>x.id!==e.id);savePatch({emprestimos:next});return next;})}>✕</button></td>
+                              </tr>
+                            ))}
+                          </tbody>
+                        </table>
+                      </div>
+                    </div>
+                  </>}
+                </>}
+              </>
+            );
+          })()}
+
+          {/* ══ CADASTROS ══ */}
+          {tab==="cadastros"&&(
+            <>
+              <div className="section-title">Tipos de Lançamento</div>
+              <div className="table-card" style={{marginBottom:"1.5rem"}}>
+                <div className="table-header"><span className="table-header-title">Tipos cadastrados</span></div>
+                <div className="table-scroll">
+                  <table>
+                    <thead><tr><th>Nome</th><th>Fluxo padrão</th><th></th></tr></thead>
+                    <tbody>
+                      {tiposList.map((t,idx)=>(
+                        <tr key={t}>
+                          <td>
+                            {cadEditTipo.idx===idx
+                              ?<input className="form-input" style={{padding:".3rem .6rem",fontSize:".82rem"}} value={cadEditTipo.nome} onChange={e=>setCadEditTipo(s=>({...s,nome:e.target.value}))}/>
+                              :<span style={{fontWeight:600}}>{t}</span>}
+                          </td>
+                          <td>
+                            {cadEditTipo.idx===idx
+                              ?<select className="form-select" style={{padding:".3rem .6rem",fontSize:".82rem"}} value={cadEditTipo.fluxo} onChange={e=>setCadEditTipo(s=>({...s,fluxo:e.target.value}))}>
+                                  <option value="entrada">↑ Entrada</option>
+                                  <option value="saida">↓ Saída</option>
+                                </select>
+                              :<span className={`badge badge-${tipoFluxo[t]||"entrada"}`}>{tipoFluxo[t]==="saida"?"↓ Saída":"↑ Entrada"}</span>}
+                          </td>
+                          <td>
+                            <div className="td-actions">
+                              {cadEditTipo.idx===idx
+                                ?<>
+                                    <button className="btn btn-accent" style={{padding:".3rem .8rem",fontSize:".75rem"}} onClick={()=>{
+                                      if(!cadEditTipo.nome.trim()) return;
+                                      setTiposList(prev=>{const next=prev.map((x,i)=>i===idx?cadEditTipo.nome.trim():x);const tf={...tipoFluxo};delete tf[t];tf[cadEditTipo.nome.trim()]=cadEditTipo.fluxo;setTipoFluxo(tf);savePatch({tiposList:next,tipoFluxo:tf});return next;});
+                                      setCadEditTipo({idx:null,nome:"",fluxo:"saida"});
+                                    }}>✓</button>
+                                    <button className="btn btn-ghost" style={{padding:".3rem .7rem",fontSize:".75rem"}} onClick={()=>setCadEditTipo({idx:null,nome:"",fluxo:"saida"})}>✕</button>
+                                  </>
+                                :<>
+                                    <button className="btn btn-ghost" style={{padding:".3rem .8rem",fontSize:".75rem"}} onClick={()=>setCadEditTipo({idx,nome:t,fluxo:tipoFluxo[t]||"saida"})}>✎</button>
+                                    <button className="btn btn-danger" style={{padding:".3rem .7rem",fontSize:".75rem"}} onClick={()=>{
+                                      setTiposList(prev=>{const next=prev.filter((_,i)=>i!==idx);const tf={...tipoFluxo};delete tf[t];setTipoFluxo(tf);savePatch({tiposList:next,tipoFluxo:tf});return next;});
+                                    }}>✕</button>
+                                  </>}
+                            </div>
+                          </td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+                <div style={{padding:"1rem 1.25rem",borderTop:"1px solid var(--border)",display:"flex",gap:".75rem",alignItems:"center",flexWrap:"wrap"}}>
+                  <input className="form-input" style={{maxWidth:180}} placeholder="Novo tipo..." value={cadNewTipo.nome} onChange={e=>setCadNewTipo(s=>({...s,nome:e.target.value}))}/>
+                  <select className="form-select" style={{maxWidth:140}} value={cadNewTipo.fluxo} onChange={e=>setCadNewTipo(s=>({...s,fluxo:e.target.value}))}>
+                    <option value="entrada">↑ Entrada</option>
+                    <option value="saida">↓ Saída</option>
+                  </select>
+                  <button className="btn btn-accent" onClick={()=>{
+                    const nome=cadNewTipo.nome.trim();
+                    if(!nome||tiposList.includes(nome)) return;
+                    setTiposList(prev=>{const next=[...prev,nome];const tf={...tipoFluxo,[nome]:cadNewTipo.fluxo};setTipoFluxo(tf);savePatch({tiposList:next,tipoFluxo:tf});return next;});
+                    setCadNewTipo({nome:"",fluxo:"saida"});
+                  }}>+ Adicionar</button>
+                </div>
+              </div>
+
+              <div className="section-title">Pessoas e Entidades</div>
+              <p style={{fontSize:".78rem",color:"var(--text-tertiary)",marginBottom:"1rem",fontFamily:"var(--font-mono)"}}>
+                Cada entidade pode ter um ou mais papéis: Origem/Destino, Credor, Devedor e/ou Operador.
+              </p>
+              <div className="table-card" style={{marginBottom:"2rem"}}>
+                <div className="table-scroll">
+                  <table>
+                    <thead><tr><th>Nome</th><th>Funções</th><th></th></tr></thead>
+                    <tbody>
+                      {entidades.map((e,idx)=>{
+                        const ROLE_LABELS={origem_destino:"Origem/Destino",credor:"Credor",devedor:"Devedor",operador:"Operador"};
+                        const ALL_ROLES=["origem_destino","credor","devedor","operador"];
+                        const isEditing=cadEditEnt.idx===idx;
+                        return(
+                          <tr key={e.nome}>
+                            <td>
+                              {isEditing
+                                ?<input className="form-input" style={{padding:".3rem .6rem",fontSize:".82rem"}} value={cadEditEnt.nome} onChange={ev=>setCadEditEnt(s=>({...s,nome:ev.target.value}))}/>
+                                :<span style={{fontWeight:600}}>{e.nome}</span>}
+                            </td>
+                            <td>
+                              {isEditing
+                                ?<div style={{display:"flex",gap:".5rem",flexWrap:"wrap"}}>
+                                    {ALL_ROLES.map(r=>(
+                                      <label key={r} style={{display:"flex",alignItems:"center",gap:".3rem",fontSize:".75rem",color:"var(--text-secondary)",cursor:"pointer"}}>
+                                        <input type="checkbox" checked={cadEditEnt.roles.includes(r)}
+                                          onChange={ev=>setCadEditEnt(s=>({...s,roles:ev.target.checked?[...s.roles,r]:s.roles.filter(x=>x!==r)}))}/>
+                                        {ROLE_LABELS[r]}
+                                      </label>
+                                    ))}
+                                  </div>
+                                :<div style={{display:"flex",gap:".4rem",flexWrap:"wrap"}}>
+                                    {e.roles.map(r=>(
+                                      <span key={r} style={{fontSize:".67rem",fontFamily:"var(--font-mono)",padding:".15rem .45rem",borderRadius:4,background:"var(--surface3)",color:"var(--text-secondary)"}}>
+                                        {ROLE_LABELS[r]}
+                                      </span>
+                                    ))}
+                                  </div>}
+                            </td>
+                            <td>
+                              <div className="td-actions">
+                                {isEditing
+                                  ?<>
+                                      <button className="btn btn-accent" style={{padding:".3rem .8rem",fontSize:".75rem"}} onClick={()=>{
+                                        if(!cadEditEnt.nome.trim()||cadEditEnt.roles.length===0) return;
+                                        setEntidades(prev=>{const next=prev.map((x,i)=>i===idx?{nome:cadEditEnt.nome.trim(),roles:cadEditEnt.roles}:x);savePatch({entidades:next});return next;});
+                                        setCadEditEnt({idx:null,nome:"",roles:[]});
+                                      }}>✓</button>
+                                      <button className="btn btn-ghost" style={{padding:".3rem .7rem",fontSize:".75rem"}} onClick={()=>setCadEditEnt({idx:null,nome:"",roles:[]})}>✕</button>
+                                    </>
+                                  :<>
+                                      <button className="btn btn-ghost" style={{padding:".3rem .8rem",fontSize:".75rem"}} onClick={()=>setCadEditEnt({idx,nome:e.nome,roles:[...e.roles]})}>✎</button>
+                                      <button className="btn btn-danger" style={{padding:".3rem .7rem",fontSize:".75rem"}} onClick={()=>setEntidades(prev=>{const next=prev.filter((_,i)=>i!==idx);savePatch({entidades:next});return next;})}>✕</button>
+                                    </>}
+                              </div>
+                            </td>
+                          </tr>
+                        );
+                      })}
+                    </tbody>
+                  </table>
+                </div>
+                <div style={{padding:"1rem 1.25rem",borderTop:"1px solid var(--border)",display:"flex",gap:".75rem",alignItems:"center",flexWrap:"wrap"}}>
+                  <input className="form-input" style={{maxWidth:180}} placeholder="Nome..." value={cadNewEnt.nome} onChange={e=>setCadNewEnt(s=>({...s,nome:e.target.value}))}/>
+                  <div style={{display:"flex",gap:".75rem",flexWrap:"wrap"}}>
+                    {[["origem_destino","Origem/Destino"],["credor","Credor"],["devedor","Devedor"],["operador","Operador"]].map(([r,l])=>(
+                      <label key={r} style={{display:"flex",alignItems:"center",gap:".3rem",fontSize:".78rem",color:"var(--text-secondary)",cursor:"pointer"}}>
+                        <input type="checkbox" checked={cadNewEnt.roles.includes(r)}
+                          onChange={ev=>setCadNewEnt(s=>({...s,roles:ev.target.checked?[...s.roles,r]:s.roles.filter(x=>x!==r)}))}/>
+                        {l}
+                      </label>
+                    ))}
+                  </div>
+                  <button className="btn btn-accent" onClick={()=>{
+                    const nome=cadNewEnt.nome.trim();
+                    if(!nome||cadNewEnt.roles.length===0||entidades.find(e=>e.nome===nome)) return;
+                    setEntidades(prev=>{const next=[...prev,{nome,roles:cadNewEnt.roles}];savePatch({entidades:next});return next;});
+                    setCadNewEnt({nome:"",roles:["origem_destino"]});
+                  }}>+ Adicionar</button>
+                </div>
+              </div>
+            </>
+          )}
+
+        </main>
+      </div>
+    </>
+  );
+}
+
+
+    // Wait for Firebase to be ready before rendering
+    function Boot() {
+      const [ready, setReady] = React.useState(!!window.__firebaseReady);
+      React.useEffect(() => {
+        if (window.__firebaseReady) return;
+        const handler = () => setReady(true);
+        document.addEventListener("firebaseReady", handler);
+        return () => document.removeEventListener("firebaseReady", handler);
+      }, []);
+      if (!ready) return (
+        <div style={{display:"flex",alignItems:"center",justifyContent:"center",height:"100vh",
+          fontFamily:"'Plus Jakarta Sans',sans-serif",color:"#6b7280",gap:12}}>
+          <span style={{fontSize:"1.5rem"}}>🎰</span>
+          <span>Conectando ao banco de dados...</span>
+        </div>
+      );
+      return <App />;
+    }
+
+    ReactDOM.createRoot(document.getElementById('root')).render(<Boot />);
+  </script>
+</body>
+</html>
