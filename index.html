@@ -305,7 +305,7 @@ function App() {
       : form.descricao==="Recolhimento" && form.origem==="Lotérica" ? "Banco"
       : form.descricao==="Recolhimento" && form.origem!=="Lotérica" ? "Lotérica"
       : form.destino;
-    const novaT = {...form,tipo:tipoFinal,destino:destinoFinal,id:nextId,valor:parseFloat(form.valor)};
+    const novaT = {...form,tipo:tipoFinal,destino:destinoFinal,id:nextId,valor:parseInput(form.valor)};
     const novoId = nextId+1;
     setTransacoes(prev=>{ const next=[...prev,novaT]; savePatch({transacoes:next,nextId:novoId}); return next; });
     setNextId(novoId);
