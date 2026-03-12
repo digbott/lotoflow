@@ -701,7 +701,7 @@ function App() {
                         <label className="form-label">&nbsp;</label>
                         <button className="btn btn-accent" onClick={()=>{
                           if(!debitoForm.credor||!parseInput(debitoForm.valor)||!debitoForm.data) return;
-                          const nd={id:nextDebitoId,credor:debitoForm.credor,valor:parseFloat(debitoForm.valor),data:debitoForm.data,descricao:debitoForm.descricao,pagamentos:[]};
+                          const nd={id:nextDebitoId,credor:debitoForm.credor,valor:parseInput(debitoForm.valor),data:debitoForm.data,descricao:debitoForm.descricao,pagamentos:[]};
                           const nDId=nextDebitoId+1;
                           setDebitos(prev=>{const next=[...prev,nd];savePatch({debitos:next,nextDebitoId:nDId});return next;});
                           setNextDebitoId(nDId);
@@ -783,7 +783,7 @@ function App() {
                                 <button className="btn btn-accent" onClick={()=>{
                                   if(pagForm.debitoId!==d.id||!parseInput(pagForm.valor)) return;
                                   const nPId=nextPagId+1;
-                                  setDebitos(prev=>{const next=prev.map(x=>x.id===d.id?{...x,pagamentos:[...x.pagamentos,{id:nextPagId,valor:parseFloat(pagForm.valor),data:pagForm.data,forma:pagForm.forma}]}:x);savePatch({debitos:next,nextPagId:nPId});return next;});
+                                  setDebitos(prev=>{const next=prev.map(x=>x.id===d.id?{...x,pagamentos:[...x.pagamentos,{id:nextPagId,valor:parseInput(pagForm.valor),data:pagForm.data,forma:pagForm.forma}]}:x);savePatch({debitos:next,nextPagId:nPId});return next;});
                                   setNextPagId(nPId);
                                   setPagForm({debitoId:null,valor:"",data:today(),forma:"Pix"});
                                 }}>+ Pagar</button>
@@ -864,7 +864,7 @@ function App() {
                         <label className="form-label">&nbsp;</label>
                         <button className="btn btn-accent" onClick={()=>{
                           if(!empForm.devedor||!parseInput(empForm.valor)||!empForm.data) return;
-                          const ne={id:nextEmpId,devedor:empForm.devedor,valor:parseFloat(empForm.valor),data:empForm.data,descricao:empForm.descricao,recebimentos:[]};
+                          const ne={id:nextEmpId,devedor:empForm.devedor,valor:parseInput(empForm.valor),data:empForm.data,descricao:empForm.descricao,recebimentos:[]};
                           const nEId=nextEmpId+1;
                           setEmprestimos(prev=>{const next=[...prev,ne];savePatch({emprestimos:next,nextEmpId:nEId});return next;});
                           setNextEmpId(nEId);
@@ -946,7 +946,7 @@ function App() {
                                 <button className="btn btn-accent" onClick={()=>{
                                   if(recForm.empId!==e.id||!parseInput(recForm.valor)) return;
                                   const nRId=nextRecId+1;
-                                  setEmprestimos(prev=>{const next=prev.map(x=>x.id===e.id?{...x,recebimentos:[...x.recebimentos,{id:nextRecId,valor:parseFloat(recForm.valor),data:recForm.data,forma:recForm.forma}]}:x);savePatch({emprestimos:next,nextRecId:nRId});return next;});
+                                  setEmprestimos(prev=>{const next=prev.map(x=>x.id===e.id?{...x,recebimentos:[...x.recebimentos,{id:nextRecId,valor:parseInput(recForm.valor),data:recForm.data,forma:recForm.forma}]}:x);savePatch({emprestimos:next,nextRecId:nRId});return next;});
                                   setNextRecId(nRId);
                                   setRecForm({empId:null,valor:"",data:today(),forma:"Pix"});
                                 }}>+ Receber</button>
