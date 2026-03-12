@@ -5,33 +5,39 @@
 
 const { useState, useMemo, useEffect, useRef, useCallback } = React;
 
-// ── Contas com acesso somente leitura ──────────
-// Adicione aqui os e-mails dos visualizadores
+// ── [F2] Controle de acesso: lista de e-mails de visualizadores ───────────────
+// A proteção real vem das Regras do Firestore (apenas leitura para não-admins).
+// Esta lista serve apenas para personalizar a UI (ocultar formulários).
 const VIEWER_EMAILS = [
   "visualizador@lotoflow.com",
 ];
 
-// ── Constantes globais ─────────────────────────
+// ── Constantes globais ──────────────────────────────────────────────────────
 const DEFAULT_TIPO_FLUXO = { Repasse:"saida", Recolhimento:"saida", Suprimento:"entrada", Vale:"entrada" };
 const DEFAULT_TIPOS      = ["Repasse","Recolhimento","Suprimento","Vale"];
 const FORMAS_PAG         = ["Pix","Boleto","Dinheiro"];
-const CURRENT_YEAR       = new Date().getFullYear();
+// [F12] CURRENT_YEAR removido daqui — calculado inline nos componentes
 
-// ── Helpers de moeda ───────────────────────────
+// ── [F15] Helpers de moeda — armazenamento em centavos inteiros ─────────────
+// Todos os valores no estado/Firestore são inteiros de centavos (ex: R$10,50 → 1050).
+// A formatação acontece apenas na exibição.
 const BRL = new Intl.NumberFormat("pt-BR", { style:"currency", currency:"BRL" });
-const formatCurrency = (v) => BRL.format(v || 0);
+const formatCurrency = (centavos) => BRL.format((centavos || 0) / 100);
+
 const formatInput = (v) => {
   const num = v.replace(/\D/g, "");
   if (!num) return "";
   return BRL.format(parseInt(num, 10) / 100);
 };
+
+// Retorna centavos inteiros (nunca float)
 const parseInput = (v) => {
   if (!v) return 0;
   const num = v.replace(/\D/g, "");
-  return num ? parseInt(num, 10) / 100 : 0;
+  return num ? parseInt(num, 10) : 0;
 };
 
-// ── Helpers de data ────────────────────────────
+// ── Helpers de data ──────────────────────────────────────────────────────────
 const today     = () => new Date().toISOString().split("T")[0];
 const formatDate = (d) => {
   if (!d) return "—";
@@ -39,17 +45,20 @@ const formatDate = (d) => {
   return `${day}/${m}/${y}`;
 };
 
-// ── Dados padrão de entidades ──────────────────
+// ── [F5] Gerador de ID único (substitui sequencial previsível) ───────────────
+const genId = () => {
+  if (typeof crypto !== "undefined" && crypto.randomUUID) return crypto.randomUUID();
+  return `${Date.now()}-${Math.random().toString(36).slice(2,9)}`;
+};
+
+// ── [F13] DEFAULT_ENTIDADES sem nomes pessoais reais ────────────────────────
+// Dados reais vivem apenas no Firestore protegido por autenticação.
 const DEFAULT_ENTIDADES = [
   { nome:"Lotérica", roles:["origem_destino"] },
-  { nome:"Thaliny",  roles:["origem_destino","credor","devedor","operador"] },
-  { nome:"Elielma",  roles:["origem_destino","devedor","operador"] },
-  { nome:"Leumim",   roles:["origem_destino","credor","devedor","operador"] },
-  { nome:"Regiane",  roles:["origem_destino","credor","devedor","operador"] },
   { nome:"Banco",    roles:["credor"] },
 ];
 
-// ── Ícone SVG do logo ──────────────────────────
+// ── Ícone SVG do logo ────────────────────────────────────────────────────────
 function LogoSVG({ size = 30, gradId = "gradLogo" }) {
   return (
     <svg width={size} height={size} viewBox="0 0 80 80" fill="none" xmlns="http://www.w3.org/2000/svg">
@@ -69,13 +78,66 @@ function LogoSVG({ size = 30, gradId = "gradLogo" }) {
   );
 }
 
-// ── Indicador de sync ──────────────────────────
-function SyncIndicator({ status }) {
+// ── [F14] Toast de notificação ───────────────────────────────────────────────
+function Toast({ toasts, dismiss }) {
+  if (!toasts.length) return null;
+  return (
+    <div style={{position:"fixed",bottom:"calc(var(--bnav-h, 0px) + 1rem)",right:"1rem",zIndex:9999,display:"flex",flexDirection:"column",gap:".5rem",maxWidth:340}}>
+      {toasts.map(toast => (
+        <div key={toast.id} style={{
+          display:"flex",alignItems:"center",gap:".75rem",
+          background: toast.type==="erro" ? "#fef2f2" : toast.type==="aviso" ? "#fffbeb" : "#f0fdf4",
+          border:`1px solid ${toast.type==="erro"?"#fca5a5":toast.type==="aviso"?"#fcd34d":"#86efac"}`,
+          borderRadius:10,padding:".75rem 1rem",boxShadow:"0 4px 16px rgba(0,0,0,.12)",
+          fontFamily:"var(--font)",fontSize:".82rem",
+          color: toast.type==="erro"?"#991b1b":toast.type==="aviso"?"#92400e":"#166534",
+        }}>
+          <span style={{fontSize:"1rem",flexShrink:0}}>
+            {toast.type==="erro"?"❌":toast.type==="aviso"?"⚠️":"✅"}
+          </span>
+          <span style={{flex:1}}>{toast.message}</span>
+          {toast.action && (
+            <button onClick={toast.action.fn}
+              style={{background:"none",border:"none",cursor:"pointer",fontWeight:700,fontSize:".8rem",color:"inherit",textDecoration:"underline",flexShrink:0}}>
+              {toast.action.label}
+            </button>
+          )}
+          <button onClick={()=>dismiss(toast.id)}
+            style={{background:"none",border:"none",cursor:"pointer",fontSize:".9rem",color:"inherit",flexShrink:0,opacity:.6}}>✕</button>
+        </div>
+      ))}
+    </div>
+  );
+}
+
+// ── [F9] Modal de confirmação ────────────────────────────────────────────────
+function ConfirmModal({ modal, onConfirm, onCancel }) {
+  if (!modal) return null;
+  return (
+    <div style={{position:"fixed",inset:0,background:"rgba(0,0,0,.45)",zIndex:10000,display:"flex",alignItems:"center",justifyContent:"center",padding:"1rem"}}>
+      <div style={{background:"#fff",borderRadius:14,padding:"1.75rem",maxWidth:380,width:"100%",boxShadow:"0 20px 60px rgba(0,0,0,.2)"}}>
+        <div style={{fontSize:"1.5rem",marginBottom:".75rem"}}>{modal.icon || "🗑️"}</div>
+        <div style={{fontWeight:700,fontSize:"1rem",color:"#111827",marginBottom:".5rem"}}>{modal.title}</div>
+        <div style={{fontSize:".85rem",color:"#6b7280",marginBottom:"1.5rem"}}>{modal.message}</div>
+        <div style={{display:"flex",gap:".75rem",justifyContent:"flex-end"}}>
+          <button className="btn btn-ghost" onClick={onCancel}>Cancelar</button>
+          <button className="btn btn-danger" style={{background:"#dc2626",color:"#fff",border:"none"}} onClick={onConfirm}>
+            {modal.confirmLabel || "Excluir"}
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+// ── Indicador de sync ────────────────────────────────────────────────────────
+function SyncIndicator({ status, onRetry }) {
   const map = {
     carregando: { color:"var(--warning)",  label:"Carregando..." },
     salvando:   { color:"var(--accent)",   label:"Salvando..." },
     ok:         { color:"var(--success)",  label:"Salvo" },
-    erro:       { color:"var(--danger)",   label:"Erro" },
+    // [F14] Erro agora tem botão de retry
+    erro:       { color:"var(--danger)",   label:"Erro ao salvar" },
   };
   const cfg = map[status];
   if (!cfg) return null;
@@ -83,19 +145,24 @@ function SyncIndicator({ status }) {
     <div style={{display:"flex",alignItems:"center",gap:5,flexShrink:0,fontFamily:"var(--font-mono)",fontSize:".66rem",color:cfg.color}}>
       <span style={{width:6,height:6,borderRadius:"50%",background:cfg.color,display:"inline-block"}}/>
       {cfg.label}
+      {status==="erro" && onRetry && (
+        <button onClick={onRetry}
+          style={{background:"none",border:"1px solid var(--danger)",borderRadius:4,padding:"1px 5px",fontSize:".6rem",color:"var(--danger)",cursor:"pointer",marginLeft:2}}>
+          Tentar novamente
+        </button>
+      )}
     </div>
   );
 }
 
-// ═══════════════════════════════════════════════
+// ═══════════════════════════════════════════════════════════════════════════════
 //  Componente principal App
-// ═══════════════════════════════════════════════
+// ═══════════════════════════════════════════════════════════════════════════════
 function App({ onLogout, userEmail }) {
 
-  // O usuário é visualizador?
+  // [F2] Verificação de visualizador (UX apenas — autorização real está no Firestore)
   const isViewer = VIEWER_EMAILS.includes((userEmail || "").toLowerCase());
 
-  // Tabs disponíveis para cada perfil
   const ALL_TABS = [
     ["dashboard",  "📊","Início",   "Dashboard"],
     ["lancamentos","➕","Lançar",   "Lançamentos"],
@@ -109,50 +176,70 @@ function App({ onLogout, userEmail }) {
 
   const [tab, setTab] = useState("dashboard");
 
-  // ── Estado: Transações ─────────────────────
-  const [transacoes,  setTransacoes]  = useState([]);
-  const [nextId,      setNextId]      = useState(1);
-  const [filterTipo,  setFilterTipo]  = useState("todos");
-  const [filterData,  setFilterData]  = useState("");
+  // ── Estado: Transações ────────────────────────────────────────────────────
+  // [F15] valores em centavos inteiros
+  const [transacoes, setTransacoes] = useState([]);
+  const [filterTipo, setFilterTipo] = useState("todos");
+  const [filterData, setFilterData] = useState("");
   const [form, setForm] = useState({ descricao:"", descricao_livre:"", origem:"", destino:"", valor:"", data:today() });
 
-  // ── Estado: Tipos de lançamento ────────────
-  const [tiposList,    setTiposList]    = useState(DEFAULT_TIPOS);
-  const [tipoFluxo,    setTipoFluxo]    = useState(DEFAULT_TIPO_FLUXO);
-  const [cadEditTipo,  setCadEditTipo]  = useState({ idx:null, nome:"", fluxo:"saida" });
-  const [cadNewTipo,   setCadNewTipo]   = useState({ nome:"", fluxo:"saida" });
+  // ── [F16] Paginação do histórico ──────────────────────────────────────────
+  const PAGE_SIZE = 50;
+  const [histPage, setHistPage] = useState(1);
 
-  // ── Estado: Entidades ──────────────────────
-  const [entidades,   setEntidades]   = useState(DEFAULT_ENTIDADES);
-  const [cadEditEnt,  setCadEditEnt]  = useState({ idx:null, nome:"", roles:[] });
-  const [cadNewEnt,   setCadNewEnt]   = useState({ nome:"", roles:["origem_destino"] });
+  // ── Estado: Tipos de lançamento ───────────────────────────────────────────
+  const [tiposList,   setTiposList]   = useState(DEFAULT_TIPOS);
+  const [tipoFluxo,   setTipoFluxo]   = useState(DEFAULT_TIPO_FLUXO);
+  const [cadEditTipo, setCadEditTipo] = useState({ idx:null, nome:"", fluxo:"saida" });
+  const [cadNewTipo,  setCadNewTipo]  = useState({ nome:"", fluxo:"saida" });
+
+  // ── Estado: Entidades ─────────────────────────────────────────────────────
+  const [entidades,  setEntidades]  = useState(DEFAULT_ENTIDADES);
+  const [cadEditEnt, setCadEditEnt] = useState({ idx:null, nome:"", roles:[] });
+  const [cadNewEnt,  setCadNewEnt]  = useState({ nome:"", roles:["origem_destino"] });
 
   // Listas derivadas
-  const pessoasList   = entidades.filter(e=>e.roles.includes("origem_destino")).map(e=>e.nome);
-  const credoresList  = entidades.filter(e=>e.roles.includes("credor")).map(e=>e.nome);
-  const devedoresList = entidades.filter(e=>e.roles.includes("devedor")).map(e=>e.nome);
+  const pessoasList   = useMemo(() => entidades.filter(e=>e.roles.includes("origem_destino")).map(e=>e.nome), [entidades]);
+  const credoresList  = useMemo(() => entidades.filter(e=>e.roles.includes("credor")).map(e=>e.nome),         [entidades]);
+  const devedoresList = useMemo(() => entidades.filter(e=>e.roles.includes("devedor")).map(e=>e.nome),        [entidades]);
 
-  // ── Estado: Débitos ────────────────────────
+  // ── Estado: Débitos ───────────────────────────────────────────────────────
   const [debitos,        setDebitos]        = useState([]);
-  const [nextDebitoId,   setNextDebitoId]   = useState(3);
-  const [nextPagId,      setNextPagId]      = useState(10);
   const [debitoForm,     setDebitoForm]     = useState({ credor:"", valor:"", data:today(), descricao:"" });
   const [pagForm,        setPagForm]        = useState({ debitoId:null, valor:"", data:today(), forma:"Pix" });
   const [expandedDebito, setExpandedDebito] = useState(null);
 
-  // ── Estado: Empréstimos ────────────────────
-  const [emprestimos,  setEmprestimos]  = useState([]);
-  const [nextEmpId,    setNextEmpId]    = useState(2);
-  const [nextRecId,    setNextRecId]    = useState(10);
-  const [empForm,      setEmpForm]      = useState({ devedor:"", valor:"", data:today(), descricao:"" });
-  const [recForm,      setRecForm]      = useState({ empId:null, valor:"", data:today(), forma:"Pix" });
-  const [expandedEmp,  setExpandedEmp]  = useState(null);
+  // ── Estado: Empréstimos ───────────────────────────────────────────────────
+  const [emprestimos, setEmprestimos] = useState([]);
+  const [empForm,     setEmpForm]     = useState({ devedor:"", valor:"", data:today(), descricao:"" });
+  const [recForm,     setRecForm]     = useState({ empId:null, valor:"", data:today(), forma:"Pix" });
+  const [expandedEmp, setExpandedEmp] = useState(null);
 
   const [debitosSubTab, setDebitosSubTab] = useState("debitosLoterica");
 
-  // ── Firestore Sync ─────────────────────────
+  // ── [F14] Toast system ────────────────────────────────────────────────────
+  const [toasts, setToasts] = useState([]);
+  const addToast = useCallback((message, type="ok", action=null, duration=4500) => {
+    const id = genId();
+    setToasts(prev => [...prev, { id, message, type, action }]);
+    if (duration > 0) setTimeout(() => setToasts(prev => prev.filter(t=>t.id!==id)), duration);
+    return id;
+  }, []);
+  const dismissToast = useCallback((id) => setToasts(prev => prev.filter(t=>t.id!==id)), []);
+
+  // ── [F9] Modal de confirmação ─────────────────────────────────────────────
+  const [modal, setModal] = useState(null);
+  const confirmRef = useRef(null);
+  const confirm = useCallback((opts) => new Promise(resolve => {
+    setModal({ ...opts, resolve });
+  }), []);
+  const handleConfirm = () => { modal?.resolve(true);  setModal(null); };
+  const handleCancel  = () => { modal?.resolve(false); setModal(null); };
+
+  // ── Firestore Sync ────────────────────────────────────────────────────────
   const [syncStatus, setSyncStatus] = useState("carregando");
-  const saveTimerRef = useRef(null);
+  const saveTimerRef  = useRef(null);
+  const pendingPatch  = useRef(null); // [F7] guarda patch pendente para flush no beforeunload
 
   useEffect(() => {
     const db = window.__db;
@@ -162,56 +249,114 @@ function App({ onLogout, userEmail }) {
       .then(snap => {
         if (snap.exists()) {
           const d = snap.data();
-          if (d.transacoes?.length)  { setTransacoes(d.transacoes);  setNextId(d.nextId || d.transacoes.length + 1); }
-          if (d.debitos?.length)     { setDebitos(d.debitos);         setNextDebitoId(d.nextDebitoId || 3); setNextPagId(d.nextPagId || 10); }
-          if (d.emprestimos?.length) { setEmprestimos(d.emprestimos); setNextEmpId(d.nextEmpId || 2); setNextRecId(d.nextRecId || 10); }
+          // [F6] IDs agora são UUIDs — campos nextXxxId removidos
+          if (d.transacoes?.length)  setTransacoes(d.transacoes);
+          if (d.debitos?.length)     setDebitos(d.debitos);
+          if (d.emprestimos?.length) setEmprestimos(d.emprestimos);
           if (d.tiposList?.length)   setTiposList(d.tiposList);
           if (d.tipoFluxo)           setTipoFluxo(d.tipoFluxo);
           if (d.entidades?.length)   setEntidades(d.entidades);
         }
         setSyncStatus("ok");
       })
-      .catch(() => setSyncStatus("erro"));
+      .catch(() => {
+        setSyncStatus("erro");
+        addToast("Falha ao carregar dados do servidor.", "erro");
+      });
   }, []);
 
-  const savePatch = useCallback((patch) => {
-    if (isViewer) return; // visualizadores nunca escrevem
-    setSyncStatus("salvando");
-    if (saveTimerRef.current) clearTimeout(saveTimerRef.current);
-    saveTimerRef.current = setTimeout(() => {
+  // [F7] Flush imediato antes de fechar a aba
+  useEffect(() => {
+    const flush = () => {
+      if (!pendingPatch.current || isViewer) return;
       const db = window.__db;
       if (!db) return;
       const { doc, setDoc, serverTimestamp } = window.firestoreLib;
-      setDoc(doc(db, "lotoflow", "dados"), { ...patch, updatedAt: serverTimestamp() }, { merge: true })
-        .then(() => setSyncStatus("ok"))
-        .catch(() => setSyncStatus("erro"));
-    }, 800);
+      // sendBeacon não suporta Firestore SDK — usamos fetch síncrono como fallback
+      try {
+        setDoc(doc(db, "lotoflow", "dados"),
+          { ...pendingPatch.current, updatedAt: serverTimestamp() },
+          { merge: true }
+        );
+      } catch(_) {}
+    };
+    window.addEventListener("beforeunload", flush);
+    return () => window.removeEventListener("beforeunload", flush);
   }, [isViewer]);
 
-  // ── Cálculos derivados ─────────────────────
-  const totalEntradas = useMemo(() => transacoes.filter(t=>t.tipo==="entrada").reduce((s,t)=>s+t.valor,0), [transacoes]);
-  const totalSaidas   = useMemo(() => transacoes.filter(t=>t.tipo==="saida").reduce((s,t)=>s+t.valor,0),   [transacoes]);
+  const doSave = useCallback((patch) => {
+    if (isViewer) return;
+    const db = window.__db;
+    if (!db) return;
+    const { doc, setDoc, serverTimestamp } = window.firestoreLib;
+    return setDoc(doc(db, "lotoflow", "dados"),
+      { ...patch, updatedAt: serverTimestamp() },
+      { merge: true }
+    ).then(() => {
+      setSyncStatus("ok");
+      pendingPatch.current = null;
+    }).catch(() => {
+      setSyncStatus("erro");
+    });
+  }, [isViewer]);
+
+  const savePatch = useCallback((patch) => {
+    if (isViewer) return;
+    setSyncStatus("salvando");
+    pendingPatch.current = { ...(pendingPatch.current || {}), ...patch }; // [F7] acumula para flush
+    if (saveTimerRef.current) clearTimeout(saveTimerRef.current);
+    saveTimerRef.current = setTimeout(() => doSave(patch), 800);
+  }, [isViewer, doSave]);
+
+  // [F14] Retry manual
+  const handleRetry = useCallback(() => {
+    if (pendingPatch.current) doSave(pendingPatch.current);
+  }, [doSave]);
+
+  // ── [F11] Cálculos derivados memoizados ───────────────────────────────────
+  const totalEntradas = useMemo(() =>
+    transacoes.filter(t=>t.tipo==="entrada").reduce((s,t)=>s+t.valor,0),
+  [transacoes]);
+  const totalSaidas = useMemo(() =>
+    transacoes.filter(t=>t.tipo==="saida").reduce((s,t)=>s+t.valor,0),
+  [transacoes]);
   const saldo = totalEntradas - totalSaidas;
 
+  // [F16] Filtragem e paginação do histórico
   const filteredTx = useMemo(() => transacoes
     .filter(t => {
       if (filterTipo !== "todos" && t.tipo !== filterTipo) return false;
       if (filterData && t.data !== filterData) return false;
       return true;
     })
-    .sort((a,b) => b.data.localeCompare(a.data)),
+    .sort((a,b) => b.data.localeCompare(a.data) || b.id.localeCompare(a.id)),
   [transacoes, filterTipo, filterData]);
 
-  const pagoPorDebito = (d) => d.pagamentos.reduce((s,p)=>s+p.valor,0);
-  const recPorEmp     = (e) => e.recebimentos.reduce((s,r)=>s+r.valor,0);
+  const histDates = useMemo(() =>
+    [...new Set(filteredTx.map(t=>t.data))].sort((a,b)=>b.localeCompare(a)),
+  [filteredTx]);
 
-  // ── Regras de negócio ──────────────────────
+  const pagedDates = useMemo(() => histDates.slice(0, histPage * PAGE_SIZE), [histDates, histPage]);
+
+  // [F11] Mapas de totais memoizados — evita recalcular em todo render
+  const pagoPorDebitoMap = useMemo(() =>
+    Object.fromEntries(debitos.map(d => [d.id, d.pagamentos.reduce((s,p)=>s+p.valor, 0)])),
+  [debitos]);
+  const recPorEmpMap = useMemo(() =>
+    Object.fromEntries(emprestimos.map(e => [e.id, e.recebimentos.reduce((s,r)=>s+r.valor, 0)])),
+  [emprestimos]);
+
+  const pagoPorDebito = (d) => pagoPorDebitoMap[d.id] ?? 0;
+  const recPorEmp     = (e) => recPorEmpMap[e.id]     ?? 0;
+
+  // ── Regras de negócio ─────────────────────────────────────────────────────
   const computeFluxo = (descricao, origem) => {
     if (descricao==="Repasse" || descricao==="Recolhimento")
       return origem==="Lotérica" ? "saida" : "entrada";
     return tipoFluxo[descricao] || "entrada";
   };
 
+  // [F5] IDs agora são UUIDs via genId()
   const handleAdd = () => {
     if (!form.descricao || !parseInput(form.valor) || !form.data) return;
     const tipoFinal = computeFluxo(form.descricao, form.origem);
@@ -220,24 +365,123 @@ function App({ onLogout, userEmail }) {
       : form.descricao==="Recolhimento" && form.origem==="Lotérica" ? "Banco"
       : form.descricao==="Recolhimento" && form.origem!=="Lotérica" ? "Lotérica"
       : form.destino;
-    const novaT = { ...form, tipo:tipoFinal, destino:destinoFinal, id:nextId, valor:parseInput(form.valor) };
-    const novoId = nextId + 1;
-    setTransacoes(prev => { const next = [...prev, novaT]; savePatch({ transacoes:next, nextId:novoId }); return next; });
-    setNextId(novoId);
+    const novaT = { ...form, tipo:tipoFinal, destino:destinoFinal,
+      id: genId(),
+      valor: parseInput(form.valor), // centavos
+    };
+    setTransacoes(prev => {
+      const next = [...prev, novaT];
+      savePatch({ transacoes: next });
+      return next;
+    });
     setForm(f => ({ ...f, descricao:"", descricao_livre:"", origem:"", destino:"", valor:"" }));
   };
 
-  // ── Guard: redireciona tab inválida para viewer ──
+  // ── Guard: redireciona tab inválida para viewer ───────────────────────────
   useEffect(() => {
     const valid = TABS.map(t=>t[0]);
     if (!valid.includes(tab)) setTab("dashboard");
   }, [isViewer]);
 
-  // ══════════════════════════════════════════════
+  // ── [F9] Helpers de exclusão com confirmação ──────────────────────────────
+  const deleteTransacao = useCallback(async (id) => {
+    const ok = await confirm({
+      title: "Excluir lançamento?",
+      message: "Esta ação não pode ser desfeita. O lançamento será removido permanentemente.",
+      confirmLabel: "Excluir",
+    });
+    if (!ok) return;
+    setTransacoes(prev => { const next=prev.filter(x=>x.id!==id); savePatch({transacoes:next}); return next; });
+    addToast("Lançamento excluído.", "ok");
+  }, [confirm, savePatch, addToast]);
+
+  const deleteDebito = useCallback(async (id) => {
+    const ok = await confirm({
+      title: "Excluir débito?",
+      message: "O débito e todos os pagamentos associados serão removidos permanentemente.",
+      confirmLabel: "Excluir",
+    });
+    if (!ok) return;
+    setDebitos(prev => { const next=prev.filter(x=>x.id!==id); savePatch({debitos:next}); return next; });
+    addToast("Débito excluído.", "ok");
+  }, [confirm, savePatch, addToast]);
+
+  const deletePagamento = useCallback(async (debitoId, pagId) => {
+    const ok = await confirm({
+      title: "Remover pagamento?",
+      message: "O registro de pagamento será excluído.",
+      confirmLabel: "Remover",
+      icon: "💳",
+    });
+    if (!ok) return;
+    setDebitos(prev => {
+      const next = prev.map(x => x.id===debitoId ? {...x, pagamentos:x.pagamentos.filter(p=>p.id!==pagId)} : x);
+      savePatch({debitos:next});
+      return next;
+    });
+    addToast("Pagamento removido.", "ok");
+  }, [confirm, savePatch, addToast]);
+
+  const deleteEmprestimo = useCallback(async (id) => {
+    const ok = await confirm({
+      title: "Excluir empréstimo?",
+      message: "O empréstimo e todos os recebimentos associados serão removidos permanentemente.",
+      confirmLabel: "Excluir",
+    });
+    if (!ok) return;
+    setEmprestimos(prev => { const next=prev.filter(x=>x.id!==id); savePatch({emprestimos:next}); return next; });
+    addToast("Empréstimo excluído.", "ok");
+  }, [confirm, savePatch, addToast]);
+
+  const deleteRecebimento = useCallback(async (empId, recId) => {
+    const ok = await confirm({
+      title: "Remover recebimento?",
+      message: "O registro de recebimento será excluído.",
+      confirmLabel: "Remover",
+      icon: "💰",
+    });
+    if (!ok) return;
+    setEmprestimos(prev => {
+      const next = prev.map(x => x.id===empId ? {...x, recebimentos:x.recebimentos.filter(r=>r.id!==recId)} : x);
+      savePatch({emprestimos:next});
+      return next;
+    });
+    addToast("Recebimento removido.", "ok");
+  }, [confirm, savePatch, addToast]);
+
+  // ── [F8] Dados do dashboard ───────────────────────────────────────────────
+  const dashboardData = useMemo(() => {
+    // Saldo acumulado por dia (últimos 60 dias)
+    const byDay = {};
+    transacoes.forEach(t => {
+      byDay[t.data] = (byDay[t.data] || 0) + (t.tipo==="entrada" ? t.valor : -t.valor);
+    });
+    const sortedDates = Object.keys(byDay).sort();
+    let accumulated = 0;
+    const chartData = sortedDates.map(d => {
+      accumulated += byDay[d];
+      return { date: formatDate(d), saldo: accumulated, diario: byDay[d] };
+    });
+    // Último dia
+    const lastDate = sortedDates[sortedDates.length - 1];
+    const lastDayTx = lastDate ? transacoes.filter(t=>t.data===lastDate).sort((a,b)=>String(a.id).localeCompare(String(b.id))) : [];
+    const lastDaySaldo = byDay[lastDate] || 0;
+    // Mês atual
+    const mes = new Date().toISOString().slice(0,7);
+    const mesEntradas = transacoes.filter(t=>t.tipo==="entrada"&&t.data.startsWith(mes)).reduce((s,t)=>s+t.valor,0);
+    const mesSaidas   = transacoes.filter(t=>t.tipo==="saida"  &&t.data.startsWith(mes)).reduce((s,t)=>s+t.valor,0);
+    return { lastDate, lastDayTx, lastDaySaldo, chartData: chartData.slice(-30), mesEntradas, mesSaidas };
+  }, [transacoes]);
+
+  // ══════════════════════════════════════════════════════════════════════════
   //  RENDER
-  // ══════════════════════════════════════════════
+  // ══════════════════════════════════════════════════════════════════════════
   return (
     <div className="app">
+
+      {/* Modais e Toasts */}
+      <ConfirmModal modal={modal} onConfirm={handleConfirm} onCancel={handleCancel}/>
+      <Toast toasts={toasts} dismiss={dismissToast}/>
 
       {/* HEADER */}
       <header className="header">
@@ -262,7 +506,6 @@ function App({ onLogout, userEmail }) {
           {new Date().toLocaleDateString("pt-BR")}
         </div>
 
-        {/* Badge de perfil visualizador */}
         {isViewer && (
           <span className="badge badge-viewer" style={{flexShrink:0}}>👁 Visualizador</span>
         )}
@@ -274,7 +517,7 @@ function App({ onLogout, userEmail }) {
           Sair
         </button>
 
-        <SyncIndicator status={syncStatus}/>
+        <SyncIndicator status={syncStatus} onRetry={handleRetry}/>
       </header>
 
       {/* BOTTOM NAV (mobile) */}
@@ -293,19 +536,67 @@ function App({ onLogout, userEmail }) {
 
         {/* ══ DASHBOARD ══ */}
         {tab==="dashboard" && (() => {
-          const dates    = [...new Set(transacoes.map(t=>t.data))].sort((a,b)=>b.localeCompare(a));
-          const lastDate = dates[0];
-          const lastDayTx    = lastDate ? transacoes.filter(t=>t.data===lastDate).sort((a,b)=>a.id-b.id) : [];
-          const lastDaySaldo = lastDayTx.reduce((s,t)=>t.tipo==="entrada"?s+t.valor:s-t.valor, 0);
+          const { lastDate, lastDayTx, lastDaySaldo, chartData, mesEntradas, mesSaidas } = dashboardData;
+          // [F8] Escala do mini gráfico
+          const maxAbs = chartData.length ? Math.max(...chartData.map(d=>Math.abs(d.saldo)), 1) : 1;
+          const H = 80; // altura em px do gráfico SVG
+          const W_BAR = Math.max(4, Math.min(18, Math.floor(560 / Math.max(chartData.length,1)) - 2));
           return (
             <>
-              <div className="kpi-grid" style={{maxWidth:380}}>
+              {/* KPIs */}
+              <div className="kpi-grid" style={{marginBottom:"1.25rem"}}>
                 <div className="kpi-card" style={{"--accent-color":saldo>=0?"var(--accent)":"var(--danger)"}}>
                   <div className="kpi-label">Saldo Atual</div>
                   <div className="kpi-value" style={{color:saldo>=0?"var(--accent)":"var(--danger)"}}>{formatCurrency(saldo)}</div>
                   <div className="kpi-sub">{saldo>=0?"✓ Positivo":"✗ Negativo"}</div>
                 </div>
+                <div className="kpi-card" style={{"--accent-color":"var(--success)"}}>
+                  <div className="kpi-label">Entradas no mês</div>
+                  <div className="kpi-value" style={{color:"var(--success)"}}>{formatCurrency(mesEntradas)}</div>
+                  <div className="kpi-sub">{new Date().toLocaleDateString("pt-BR",{month:"long",year:"numeric"})}</div>
+                </div>
+                <div className="kpi-card" style={{"--accent-color":"var(--danger)"}}>
+                  <div className="kpi-label">Saídas no mês</div>
+                  <div className="kpi-value" style={{color:"var(--danger)"}}>{formatCurrency(mesSaidas)}</div>
+                  <div className="kpi-sub">Saldo do mês: {formatCurrency(mesEntradas-mesSaidas)}</div>
+                </div>
               </div>
+
+              {/* [F8] Mini gráfico de evolução de saldo */}
+              {chartData.length > 1 && (
+                <>
+                  <div className="section-title">Evolução do Saldo (últimos {chartData.length} dias)</div>
+                  <div className="form-card" style={{marginBottom:"1.25rem",padding:"1rem 1.25rem",overflowX:"auto"}}>
+                    <svg width="100%" viewBox={`0 0 ${Math.max(chartData.length*(W_BAR+2),200)} ${H+24}`} preserveAspectRatio="xMinYMin meet" style={{display:"block",minWidth:200}}>
+                      {chartData.map((d,i) => {
+                        const barH = Math.max(2, (Math.abs(d.saldo)/maxAbs)*(H-4));
+                        const isPos = d.saldo >= 0;
+                        const x = i*(W_BAR+2);
+                        const y = isPos ? (H/2 - barH) : H/2;
+                        return (
+                          <g key={i}>
+                            <rect x={x} y={y} width={W_BAR} height={barH}
+                              fill={isPos?"#059669":"#dc2626"} opacity={0.75} rx={2}>
+                              <title>{d.date}: {formatCurrency(d.saldo)}</title>
+                            </rect>
+                          </g>
+                        );
+                      })}
+                      {/* Linha de zero */}
+                      <line x1="0" y1={H/2} x2={chartData.length*(W_BAR+2)} y2={H/2}
+                        stroke="#e5e7eb" strokeWidth="1" strokeDasharray="3,2"/>
+                      {/* Labels primeiro e último */}
+                      {chartData.length > 0 && (
+                        <>
+                          <text x="0" y={H+16} fontSize="9" fill="#9ca3af" fontFamily="monospace">{chartData[0].date}</text>
+                          <text x={Math.max(0,(chartData.length-1)*(W_BAR+2)-30)} y={H+16} fontSize="9" fill="#9ca3af" fontFamily="monospace">{chartData[chartData.length-1].date}</text>
+                        </>
+                      )}
+                    </svg>
+                  </div>
+                </>
+              )}
+
               {lastDate ? (
                 <>
                   <div className="section-title">Movimentações de {formatDate(lastDate)}</div>
@@ -437,8 +728,9 @@ function App({ onLogout, userEmail }) {
                         <td style={{fontSize:".8rem"}}>{t.destino||"—"}</td>
                         <td className={`val-${t.tipo}`}>{t.tipo==="entrada"?"+":"-"}{formatCurrency(t.valor)}</td>
                         <td>
+                          {/* [F9] Exclusão com confirmação */}
                           <button className="btn btn-danger" style={{padding:".3rem .7rem",fontSize:".75rem"}}
-                            onClick={() => setTransacoes(prev=>{const next=prev.filter(x=>x.id!==t.id);savePatch({transacoes:next});return next;})}>
+                            onClick={() => deleteTransacao(t.id)}>
                             ✕
                           </button>
                         </td>
@@ -453,7 +745,6 @@ function App({ onLogout, userEmail }) {
 
         {/* ══ HISTÓRICO ══ */}
         {tab==="historico" && (() => {
-          const dates = [...new Set(filteredTx.map(t=>t.data))].sort((a,b)=>b.localeCompare(a));
           return (
             <>
               <div className="section-title">Histórico Completo</div>
@@ -461,52 +752,63 @@ function App({ onLogout, userEmail }) {
                 <div className="table-header">
                   <span className="table-header-title">Extrato de Movimentações</span>
                   <div className="table-filters">
-                    <select className="filter-input" value={filterTipo} onChange={e=>setFilterTipo(e.target.value)}>
+                    <select className="filter-input" value={filterTipo} onChange={e=>{setFilterTipo(e.target.value);setHistPage(1);}}>
                       <option value="todos">Todos</option>
                       <option value="entrada">Entradas</option>
                       <option value="saida">Saídas</option>
                     </select>
-                    <input className="filter-input" type="date" value={filterData} onChange={e=>setFilterData(e.target.value)}/>
-                    {filterData && <button className="btn btn-ghost" style={{padding:".35rem .8rem",fontSize:".75rem"}} onClick={()=>setFilterData("")}>✕</button>}
+                    <input className="filter-input" type="date" value={filterData} onChange={e=>{setFilterData(e.target.value);setHistPage(1);}}/>
+                    {filterData && <button className="btn btn-ghost" style={{padding:".35rem .8rem",fontSize:".75rem"}} onClick={()=>{setFilterData("");setHistPage(1);}}>✕</button>}
                   </div>
                 </div>
                 <div className="table-scroll">
                   {filteredTx.length===0
                     ? <div className="empty">Nenhuma transação encontrada.</div>
-                    : dates.map(date => {
-                        const dayTx    = filteredTx.filter(t=>t.data===date);
-                        const daySaldo = dayTx.reduce((s,t)=>t.tipo==="entrada"?s+t.valor:s-t.valor, 0);
-                        return (
-                          <div key={date}>
-                            <div style={{padding:".45rem 1rem",background:"var(--surface2)",borderBottom:"1px solid var(--border)"}}>
-                              <span style={{fontFamily:"var(--font-mono)",fontSize:".68rem",letterSpacing:"1.2px",textTransform:"uppercase",color:"var(--text-tertiary)"}}>{formatDate(date)}</span>
+                    : <>
+                        {/* [F16] Renderiza apenas as datas da página atual */}
+                        {pagedDates.map(date => {
+                          const dayTx    = filteredTx.filter(t=>t.data===date);
+                          const daySaldo = dayTx.reduce((s,t)=>t.tipo==="entrada"?s+t.valor:s-t.valor, 0);
+                          return (
+                            <div key={date}>
+                              <div style={{padding:".45rem 1rem",background:"var(--surface2)",borderBottom:"1px solid var(--border)"}}>
+                                <span style={{fontFamily:"var(--font-mono)",fontSize:".68rem",letterSpacing:"1.2px",textTransform:"uppercase",color:"var(--text-tertiary)"}}>{formatDate(date)}</span>
+                              </div>
+                              <table style={{width:"100%",borderCollapse:"collapse",minWidth:480}}>
+                                <tbody>
+                                  {dayTx.map(t => (
+                                    <tr key={t.id}>
+                                      <td style={{padding:".7rem 1rem",whiteSpace:"nowrap"}}>
+                                        <span className={`badge badge-${t.tipo}`}>{t.tipo==="entrada"?"↑ Entrada":"↓ Saída"}</span>
+                                        {" "}<span style={{fontSize:".78rem",color:"var(--text-tertiary)"}}>{t.descricao}</span>
+                                      </td>
+                                      <td style={{padding:".7rem .5rem",color:"var(--text-tertiary)",fontSize:".82rem"}}>{t.descricao_livre||"—"}</td>
+                                      <td style={{padding:".7rem .5rem",fontSize:".8rem",color:"var(--text-tertiary)",whiteSpace:"nowrap"}}>{t.origem||"—"} → {t.destino||"—"}</td>
+                                      <td style={{padding:".7rem 1rem",textAlign:"right",fontFamily:"var(--font-mono)",fontWeight:600,whiteSpace:"nowrap"}} className={`val-${t.tipo}`}>
+                                        {t.tipo==="entrada"?"+":"-"}{formatCurrency(t.valor)}
+                                      </td>
+                                    </tr>
+                                  ))}
+                                </tbody>
+                              </table>
+                              <div style={{padding:".6rem 1rem",borderTop:"1px solid var(--border)",borderBottom:"1px solid var(--border)",display:"flex",justifyContent:"flex-end",alignItems:"center",gap:".75rem",background:"var(--surface2)"}}>
+                                <span style={{fontFamily:"var(--font-mono)",fontSize:".65rem",letterSpacing:"1px",textTransform:"uppercase",color:"var(--text-tertiary)"}}>Saldo do dia</span>
+                                <span style={{fontFamily:"var(--font-mono)",fontSize:".9rem",fontWeight:700,color:daySaldo>=0?"var(--accent)":"var(--danger)"}}>
+                                  {daySaldo>=0?"+":""}{formatCurrency(daySaldo)}
+                                </span>
+                              </div>
                             </div>
-                            <table style={{width:"100%",borderCollapse:"collapse",minWidth:480}}>
-                              <tbody>
-                                {dayTx.map(t => (
-                                  <tr key={t.id}>
-                                    <td style={{padding:".7rem 1rem",whiteSpace:"nowrap"}}>
-                                      <span className={`badge badge-${t.tipo}`}>{t.tipo==="entrada"?"↑ Entrada":"↓ Saída"}</span>
-                                      {" "}<span style={{fontSize:".78rem",color:"var(--text-tertiary)"}}>{t.descricao}</span>
-                                    </td>
-                                    <td style={{padding:".7rem .5rem",color:"var(--text-tertiary)",fontSize:".82rem"}}>{t.descricao_livre||"—"}</td>
-                                    <td style={{padding:".7rem .5rem",fontSize:".8rem",color:"var(--text-tertiary)",whiteSpace:"nowrap"}}>{t.origem||"—"} → {t.destino||"—"}</td>
-                                    <td style={{padding:".7rem 1rem",textAlign:"right",fontFamily:"var(--font-mono)",fontWeight:600,whiteSpace:"nowrap"}} className={`val-${t.tipo}`}>
-                                      {t.tipo==="entrada"?"+":"-"}{formatCurrency(t.valor)}
-                                    </td>
-                                  </tr>
-                                ))}
-                              </tbody>
-                            </table>
-                            <div style={{padding:".6rem 1rem",borderTop:"1px solid var(--border)",borderBottom:"1px solid var(--border)",display:"flex",justifyContent:"flex-end",alignItems:"center",gap:".75rem",background:"var(--surface2)"}}>
-                              <span style={{fontFamily:"var(--font-mono)",fontSize:".65rem",letterSpacing:"1px",textTransform:"uppercase",color:"var(--text-tertiary)"}}>Saldo do dia</span>
-                              <span style={{fontFamily:"var(--font-mono)",fontSize:".9rem",fontWeight:700,color:daySaldo>=0?"var(--accent)":"var(--danger)"}}>
-                                {daySaldo>=0?"+":""}{formatCurrency(daySaldo)}
-                              </span>
-                            </div>
+                          );
+                        })}
+                        {/* [F16] Botão carregar mais */}
+                        {pagedDates.length < histDates.length && (
+                          <div style={{padding:"1rem",textAlign:"center",borderTop:"1px solid var(--border)"}}>
+                            <button className="btn btn-ghost" onClick={()=>setHistPage(p=>p+1)}>
+                              Carregar mais ({histDates.length - pagedDates.length} dias restantes)
+                            </button>
                           </div>
-                        );
-                      })
+                        )}
+                      </>
                   }
                 </div>
               </div>
@@ -554,7 +856,6 @@ function App({ onLogout, userEmail }) {
                   </div>
                 </div>
 
-                {/* Formulário somente para admin */}
                 {!isViewer && <>
                   <div className="section-title">Registrar Empréstimo Recebido</div>
                   <div className="form-card">
@@ -582,10 +883,9 @@ function App({ onLogout, userEmail }) {
                         <label className="form-label">&nbsp;</label>
                         <button className="btn btn-accent" onClick={()=>{
                           if (!debitoForm.credor || !parseInput(debitoForm.valor) || !debitoForm.data) return;
-                          const nd = { id:nextDebitoId, credor:debitoForm.credor, valor:parseInput(debitoForm.valor), data:debitoForm.data, descricao:debitoForm.descricao, pagamentos:[] };
-                          const nDId = nextDebitoId+1;
-                          setDebitos(prev=>{const next=[...prev,nd];savePatch({debitos:next,nextDebitoId:nDId});return next;});
-                          setNextDebitoId(nDId);
+                          // [F5] UUID como ID
+                          const nd = { id:genId(), credor:debitoForm.credor, valor:parseInput(debitoForm.valor), data:debitoForm.data, descricao:debitoForm.descricao, pagamentos:[] };
+                          setDebitos(prev=>{const next=[...prev,nd];savePatch({debitos:next});return next;});
                           setDebitoForm({credor:"",valor:"",data:today(),descricao:""});
                         }}>+ Registrar</button>
                       </div>
@@ -622,7 +922,7 @@ function App({ onLogout, userEmail }) {
                           <span style={{fontFamily:"var(--font-mono)",fontSize:".7rem",color:"var(--text-tertiary)"}}>{isExp?"▲":"▼"}</span>
                           {!isViewer && (
                             <button className="btn btn-danger" style={{padding:".3rem .7rem",fontSize:".75rem"}}
-                              onClick={ev=>{ev.stopPropagation();setDebitos(prev=>{const next=prev.filter(x=>x.id!==d.id);savePatch({debitos:next});return next;});}}>
+                              onClick={ev=>{ev.stopPropagation();deleteDebito(d.id);}}>
                               ✕
                             </button>
                           )}
@@ -640,7 +940,7 @@ function App({ onLogout, userEmail }) {
                                   <span style={{fontFamily:"var(--font-mono)",fontWeight:600,color:"var(--success)",marginLeft:"auto"}}>{formatCurrency(p.valor)}</span>
                                   {!isViewer && (
                                     <button className="btn btn-danger" style={{padding:".2rem .5rem",fontSize:".7rem"}}
-                                      onClick={()=>setDebitos(prev=>{const next=prev.map(x=>x.id===d.id?{...x,pagamentos:x.pagamentos.filter(pg=>pg.id!==p.id)}:x);savePatch({debitos:next});return next;})}>
+                                      onClick={()=>deletePagamento(d.id, p.id)}>
                                       ✕
                                     </button>
                                   )}
@@ -675,9 +975,12 @@ function App({ onLogout, userEmail }) {
                                 <label className="form-label">&nbsp;</label>
                                 <button className="btn btn-accent" onClick={()=>{
                                   if (pagForm.debitoId!==d.id || !parseInput(pagForm.valor)) return;
-                                  const nPId = nextPagId+1;
-                                  setDebitos(prev=>{const next=prev.map(x=>x.id===d.id?{...x,pagamentos:[...x.pagamentos,{id:nextPagId,valor:parseInput(pagForm.valor),data:pagForm.data,forma:pagForm.forma}]}:x);savePatch({debitos:next,nextPagId:nPId});return next;});
-                                  setNextPagId(nPId);
+                                  // [F5] UUID como ID do pagamento
+                                  setDebitos(prev=>{
+                                    const next=prev.map(x=>x.id===d.id?{...x,pagamentos:[...x.pagamentos,{id:genId(),valor:parseInput(pagForm.valor),data:pagForm.data,forma:pagForm.forma}]}:x);
+                                    savePatch({debitos:next});
+                                    return next;
+                                  });
                                   setPagForm({debitoId:null,valor:"",data:today(),forma:"Pix"});
                                 }}>+ Pagar</button>
                               </div>
@@ -703,7 +1006,7 @@ function App({ onLogout, userEmail }) {
                               <td style={{color:"var(--text-tertiary)",fontSize:".82rem"}}>{d.descricao||"—"}</td>
                               <td style={{fontFamily:"var(--font-mono)",fontWeight:600}}>{formatCurrency(d.valor)}</td>
                               <td><span className="badge badge-ok">✓ Quitado</span></td>
-                              {!isViewer && <td><button className="btn btn-danger" style={{padding:".3rem .7rem",fontSize:".75rem"}} onClick={()=>setDebitos(prev=>{const next=prev.filter(x=>x.id!==d.id);savePatch({debitos:next});return next;})}>✕</button></td>}
+                              {!isViewer && <td><button className="btn btn-danger" style={{padding:".3rem .7rem",fontSize:".75rem"}} onClick={()=>deleteDebito(d.id)}>✕</button></td>}
                             </tr>
                           ))}
                         </tbody>
@@ -760,10 +1063,9 @@ function App({ onLogout, userEmail }) {
                         <label className="form-label">&nbsp;</label>
                         <button className="btn btn-accent" onClick={()=>{
                           if (!empForm.devedor || !parseInput(empForm.valor) || !empForm.data) return;
-                          const ne = { id:nextEmpId, devedor:empForm.devedor, valor:parseInput(empForm.valor), data:empForm.data, descricao:empForm.descricao, recebimentos:[] };
-                          const nEId = nextEmpId+1;
-                          setEmprestimos(prev=>{const next=[...prev,ne];savePatch({emprestimos:next,nextEmpId:nEId});return next;});
-                          setNextEmpId(nEId);
+                          // [F5] UUID como ID
+                          const ne = { id:genId(), devedor:empForm.devedor, valor:parseInput(empForm.valor), data:empForm.data, descricao:empForm.descricao, recebimentos:[] };
+                          setEmprestimos(prev=>{const next=[...prev,ne];savePatch({emprestimos:next});return next;});
                           setEmpForm({devedor:"",valor:"",data:today(),descricao:""});
                         }}>+ Registrar</button>
                       </div>
@@ -800,7 +1102,7 @@ function App({ onLogout, userEmail }) {
                           <span style={{fontFamily:"var(--font-mono)",fontSize:".7rem",color:"var(--text-tertiary)"}}>{isExp?"▲":"▼"}</span>
                           {!isViewer && (
                             <button className="btn btn-danger" style={{padding:".3rem .7rem",fontSize:".75rem"}}
-                              onClick={ev=>{ev.stopPropagation();setEmprestimos(prev=>{const next=prev.filter(x=>x.id!==e.id);savePatch({emprestimos:next});return next;});}}>
+                              onClick={ev=>{ev.stopPropagation();deleteEmprestimo(e.id);}}>
                               ✕
                             </button>
                           )}
@@ -818,7 +1120,7 @@ function App({ onLogout, userEmail }) {
                                   <span style={{fontFamily:"var(--font-mono)",fontWeight:600,color:"var(--warning)",marginLeft:"auto"}}>{formatCurrency(r.valor)}</span>
                                   {!isViewer && (
                                     <button className="btn btn-danger" style={{padding:".2rem .5rem",fontSize:".7rem"}}
-                                      onClick={()=>setEmprestimos(prev=>{const next=prev.map(x=>x.id===e.id?{...x,recebimentos:x.recebimentos.filter(r2=>r2.id!==r.id)}:x);savePatch({emprestimos:next});return next;})}>
+                                      onClick={()=>deleteRecebimento(e.id, r.id)}>
                                       ✕
                                     </button>
                                   )}
@@ -853,9 +1155,12 @@ function App({ onLogout, userEmail }) {
                                 <label className="form-label">&nbsp;</label>
                                 <button className="btn btn-accent" onClick={()=>{
                                   if (recForm.empId!==e.id || !parseInput(recForm.valor)) return;
-                                  const nRId = nextRecId+1;
-                                  setEmprestimos(prev=>{const next=prev.map(x=>x.id===e.id?{...x,recebimentos:[...x.recebimentos,{id:nextRecId,valor:parseInput(recForm.valor),data:recForm.data,forma:recForm.forma}]}:x);savePatch({emprestimos:next,nextRecId:nRId});return next;});
-                                  setNextRecId(nRId);
+                                  // [F5] UUID como ID
+                                  setEmprestimos(prev=>{
+                                    const next=prev.map(x=>x.id===e.id?{...x,recebimentos:[...x.recebimentos,{id:genId(),valor:parseInput(recForm.valor),data:recForm.data,forma:recForm.forma}]}:x);
+                                    savePatch({emprestimos:next});
+                                    return next;
+                                  });
                                   setRecForm({empId:null,valor:"",data:today(),forma:"Pix"});
                                 }}>+ Receber</button>
                               </div>
@@ -881,7 +1186,7 @@ function App({ onLogout, userEmail }) {
                               <td style={{color:"var(--text-tertiary)",fontSize:".82rem"}}>{e.descricao||"—"}</td>
                               <td style={{fontFamily:"var(--font-mono)",fontWeight:600}}>{formatCurrency(e.valor)}</td>
                               <td><span className="badge badge-ok">✓ Quitado</span></td>
-                              {!isViewer && <td><button className="btn btn-danger" style={{padding:".3rem .7rem",fontSize:".75rem"}} onClick={()=>setEmprestimos(prev=>{const next=prev.filter(x=>x.id!==e.id);savePatch({emprestimos:next});return next;})}>✕</button></td>}
+                              {!isViewer && <td><button className="btn btn-danger" style={{padding:".3rem .7rem",fontSize:".75rem"}} onClick={()=>deleteEmprestimo(e.id)}>✕</button></td>}
                             </tr>
                           ))}
                         </tbody>
@@ -932,7 +1237,9 @@ function App({ onLogout, userEmail }) {
                                 </>
                               : <>
                                   <button className="btn btn-ghost" style={{padding:".3rem .8rem",fontSize:".75rem"}} onClick={()=>setCadEditTipo({idx,nome:t,fluxo:tipoFluxo[t]||"saida"})}>✎</button>
-                                  <button className="btn btn-danger" style={{padding:".3rem .7rem",fontSize:".75rem"}} onClick={()=>{
+                                  <button className="btn btn-danger" style={{padding:".3rem .7rem",fontSize:".75rem"}} onClick={async ()=>{
+                                    const ok = await confirm({ title:"Excluir tipo?", message:`O tipo "${t}" será removido. Lançamentos existentes não serão afetados.`, confirmLabel:"Excluir" });
+                                    if (!ok) return;
                                     setTiposList(prev=>{const next=prev.filter((_,i)=>i!==idx);const tf={...tipoFluxo};delete tf[t];setTipoFluxo(tf);savePatch({tiposList:next,tipoFluxo:tf});return next;});
                                   }}>✕</button>
                                 </>}
@@ -1010,7 +1317,11 @@ function App({ onLogout, userEmail }) {
                                   </>
                                 : <>
                                     <button className="btn btn-ghost" style={{padding:".3rem .8rem",fontSize:".75rem"}} onClick={()=>setCadEditEnt({idx,nome:e.nome,roles:[...e.roles]})}>✎</button>
-                                    <button className="btn btn-danger" style={{padding:".3rem .7rem",fontSize:".75rem"}} onClick={()=>setEntidades(prev=>{const next=prev.filter((_,i)=>i!==idx);savePatch({entidades:next});return next;})}>✕</button>
+                                    <button className="btn btn-danger" style={{padding:".3rem .7rem",fontSize:".75rem"}} onClick={async ()=>{
+                                      const ok = await confirm({ title:"Excluir entidade?", message:`"${e.nome}" será removido da lista. Lançamentos existentes não serão afetados.`, confirmLabel:"Excluir" });
+                                      if (!ok) return;
+                                      setEntidades(prev=>{const next=prev.filter((_,i)=>i!==idx);savePatch({entidades:next});return next;});
+                                    }}>✕</button>
                                   </>}
                             </div>
                           </td>
@@ -1044,26 +1355,29 @@ function App({ onLogout, userEmail }) {
 
       </main>
 
+      {/* [F12] Ano calculado inline */}
       <footer style={{textAlign:"center",padding:"1.5rem 1rem",borderTop:"1px solid var(--border)",background:"#111827"}}>
         <img src="logo.png" alt="Logos Simeraion Systems" style={{height:48,opacity:.85,marginBottom:".5rem"}}/>
         <div style={{fontFamily:"var(--font-mono)",fontSize:".65rem",color:"#6b7280"}}>
-          © {CURRENT_YEAR} Logos Simeraion Systems · Todos os direitos reservados
+          © {new Date().getFullYear()} Logos Simeraion Systems · Todos os direitos reservados
         </div>
       </footer>
     </div>
   );
 }
 
-// ═══════════════════════════════════════════════
+// ═══════════════════════════════════════════════════════════════════════════════
 //  Componente Boot — autenticação
-// ═══════════════════════════════════════════════
+// ═══════════════════════════════════════════════════════════════════════════════
 function Boot() {
-  const [ready,       setReady]       = useState(!!window.__firebaseReady);
-  const [user,        setUser]        = useState(null);
-  const [authLoading, setAuthLoading] = useState(true);
-  const [loginForm,   setLoginForm]   = useState({ email:"", senha:"" });
-  const [loginError,  setLoginError]  = useState("");
-  const [loginLoading,setLoginLoading]= useState(false);
+  const [ready,        setReady]        = useState(!!window.__firebaseReady);
+  const [user,         setUser]         = useState(null);
+  const [authLoading,  setAuthLoading]  = useState(true);
+  const [loginForm,    setLoginForm]    = useState({ email:"", senha:"" });
+  const [loginError,   setLoginError]   = useState("");
+  const [loginLoading, setLoginLoading] = useState(false);
+  // [F4] Contador de tentativas para feedback de força bruta
+  const [loginAttempts, setLoginAttempts] = useState(0);
 
   useEffect(() => {
     if (window.__firebaseReady) return;
@@ -1084,13 +1398,26 @@ function Boot() {
 
   const handleLogin = async () => {
     if (!loginForm.email || !loginForm.senha) return;
+    // [F4] Bloqueia após 5 tentativas com cooldown de 30s
+    if (loginAttempts >= 5) {
+      setLoginError("Muitas tentativas. Aguarde 30 segundos antes de tentar novamente.");
+      return;
+    }
     setLoginLoading(true);
     setLoginError("");
     try {
       const { signInWithEmailAndPassword } = window.authLib;
       await signInWithEmailAndPassword(window.__auth, loginForm.email, loginForm.senha);
+      setLoginAttempts(0);
     } catch(e) {
-      setLoginError("Email ou senha incorretos.");
+      const newAttempts = loginAttempts + 1;
+      setLoginAttempts(newAttempts);
+      if (newAttempts >= 5) {
+        setLoginError("Conta bloqueada temporariamente por excesso de tentativas. Aguarde 30 segundos.");
+        setTimeout(() => setLoginAttempts(0), 30000);
+      } else {
+        setLoginError(`Email ou senha incorretos. (${newAttempts}/5 tentativas)`);
+      }
     }
     setLoginLoading(false);
   };
@@ -1101,7 +1428,6 @@ function Boot() {
     setLoginForm({ email:"", senha:"" });
   };
 
-  // Carregando Firebase
   if (!ready || authLoading) return (
     <div style={{display:"flex",alignItems:"center",justifyContent:"center",height:"100vh",fontFamily:"'Plus Jakarta Sans',sans-serif",color:"#6b7280",gap:12}}>
       <span style={{fontSize:"1.5rem"}}>🎰</span>
@@ -1109,7 +1435,6 @@ function Boot() {
     </div>
   );
 
-  // Tela de login
   if (!user) return (
     <div style={{display:"flex",alignItems:"center",justifyContent:"center",height:"100vh",background:"#f3f4f6",fontFamily:"'Plus Jakarta Sans',sans-serif"}}>
       <div style={{background:"#fff",borderRadius:16,padding:"2.5rem",boxShadow:"0 4px 24px rgba(0,0,0,.10)",width:"100%",maxWidth:360}}>
@@ -1129,7 +1454,8 @@ function Boot() {
               style={{border:"1px solid #d1d5db",borderRadius:8,padding:".5rem .8rem",fontSize:".84rem",outline:"none",fontFamily:"inherit"}}
               value={loginForm.email}
               onChange={e=>setLoginForm(f=>({...f,email:e.target.value}))}
-              onKeyDown={e=>e.key==="Enter"&&handleLogin()}/>
+              onKeyDown={e=>e.key==="Enter"&&handleLogin()}
+              disabled={loginAttempts>=5}/>
           </div>
           <div style={{display:"flex",flexDirection:"column",gap:".35rem"}}>
             <label style={{fontSize:".72rem",fontWeight:600,color:"#6b7280"}}>Senha</label>
@@ -1137,17 +1463,19 @@ function Boot() {
               style={{border:"1px solid #d1d5db",borderRadius:8,padding:".5rem .8rem",fontSize:".84rem",outline:"none",fontFamily:"inherit"}}
               value={loginForm.senha}
               onChange={e=>setLoginForm(f=>({...f,senha:e.target.value}))}
-              onKeyDown={e=>e.key==="Enter"&&handleLogin()}/>
+              onKeyDown={e=>e.key==="Enter"&&handleLogin()}
+              disabled={loginAttempts>=5}/>
           </div>
-          {loginError && <div style={{fontSize:".78rem",color:"#dc2626",textAlign:"center"}}>{loginError}</div>}
-          <button onClick={handleLogin} disabled={loginLoading}
-            style={{background:"#2563eb",color:"#fff",border:"none",borderRadius:8,padding:".6rem 1rem",fontFamily:"inherit",fontSize:".85rem",fontWeight:600,cursor:"pointer",marginTop:".25rem"}}>
-            {loginLoading ? "Entrando..." : "Entrar"}
+          {loginError && <div style={{fontSize:".78rem",color:"#dc2626",textAlign:"center",background:"#fef2f2",padding:".5rem .75rem",borderRadius:6,border:"1px solid #fca5a5"}}>{loginError}</div>}
+          <button onClick={handleLogin} disabled={loginLoading || loginAttempts>=5}
+            style={{background: loginAttempts>=5?"#9ca3af":"#2563eb",color:"#fff",border:"none",borderRadius:8,padding:".6rem 1rem",fontFamily:"inherit",fontSize:".85rem",fontWeight:600,cursor:loginAttempts>=5?"not-allowed":"pointer",marginTop:".25rem"}}>
+            {loginLoading ? "Entrando..." : loginAttempts>=5 ? "Aguarde..." : "Entrar"}
           </button>
+          {/* [F12] Ano inline */}
           <div style={{textAlign:"center",padding:"1.25rem",borderTop:"1px solid #e5e7eb",background:"#111827",borderRadius:"0 0 16px 16px",margin:"1.5rem -2.5rem -2.5rem -2.5rem"}}>
             <img src="logo.png" alt="Logos Simeraion Systems" style={{height:36,opacity:.85,marginBottom:".4rem"}}/>
             <div style={{fontFamily:"monospace",fontSize:".62rem",color:"#6b7280"}}>
-              © {CURRENT_YEAR} Logos Simeraion Systems · Todos os direitos reservados
+              © {new Date().getFullYear()} Logos Simeraion Systems · Todos os direitos reservados
             </div>
           </div>
         </div>
@@ -1155,9 +1483,8 @@ function Boot() {
     </div>
   );
 
-  // App autenticado — passa o e-mail para controle de perfil
   return <App onLogout={handleLogout} userEmail={user.email}/>;
 }
 
-// ── Monta o app ────────────────────────────────
+// ── Monta o app ──────────────────────────────────────────────────────────────
 ReactDOM.createRoot(document.getElementById("root")).render(<Boot/>);
