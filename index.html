@@ -50,7 +50,7 @@ const PESSOAS_SUPRIMENTO_ORIGEM = ["Banco","Outro"];
 const FORMAS_PAG = ["Pix","Boleto","Dinheiro"];
 
 const formatCurrency = (v) => new Intl.NumberFormat("pt-BR",{style:"currency",currency:"BRL"}).format(v||0);
-onst formatInput = (v) => {
+const formatInput = (v) => {
   const num = v.replace(/\D/g, "");
   if (!num) return "";
   const cents = parseInt(num, 10);
