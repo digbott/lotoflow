@@ -1253,7 +1253,7 @@ function App({ onLogout }) {
     </div>
   );
 
-  return <App onLogout={()=>{ const {signOut}=window.authLib; signOut(window.__auth); }}/>;
+  return <App onLogout={()=>{ const {signOut}=window.authLib; signOut(window.__auth); setLoginForm({email:"", senha:""});}}/>;
 }
 
     ReactDOM.createRoot(document.getElementById('root')).render(<Boot />);
