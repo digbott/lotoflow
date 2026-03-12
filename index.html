@@ -228,7 +228,7 @@ const DEFAULT_ENTIDADES = [
 function App() {
   const [tab, setTab] = useState("dashboard");
 
-  const [transacoes, setTransacoes] = useState(SEED_DATA);
+  const [transacoes, setTransacoes] = useState([]);
   const [nextId, setNextId] = useState(SEED_DATA.length + 1);
   const [filterTipo, setFilterTipo] = useState("todos");
   const [filterData, setFilterData] = useState("");
@@ -246,14 +246,14 @@ function App() {
   const credoresList  = entidades.filter(e=>e.roles.includes("credor")).map(e=>e.nome);
   const devedoresList = entidades.filter(e=>e.roles.includes("devedor")).map(e=>e.nome);
 
-  const [debitos, setDebitos]           = useState(SEED_DEBITOS);
+  const [debitos, setDebitos]           = useState([]);
   const [nextDebitoId, setNextDebitoId] = useState(3);
   const [nextPagId, setNextPagId]       = useState(10);
   const [debitoForm, setDebitoForm]     = useState({credor:"",valor:"",data:today(),descricao:""});
   const [pagForm, setPagForm]           = useState({debitoId:null,valor:"",data:today(),forma:"Pix"});
   const [expandedDebito, setExpandedDebito] = useState(null);
 
-  const [emprestimos, setEmprestimos]   = useState(SEED_EMPRESTIMOS);
+  const [emprestimos, setEmprestimos]   = useState([]);
   const [nextEmpId, setNextEmpId]       = useState(2);
   const [nextRecId, setNextRecId]       = useState(10);
   const [empForm, setEmpForm]           = useState({devedor:"",valor:"",data:today(),descricao:""});
