@@ -520,7 +520,7 @@ function App() {
                   </div>
                   <div className="form-group">
                     <label className="form-label">Valor (R$)</label>
-                    <input className="form-input" type="number" min="0" step="0.01" placeholder="0,00" value={form.valor} onChange={e=>setForm(f=>({...f,valor:e.target.value}))}/>
+                    <input className="form-input" type="text" placeholder="R$ 0,00" value={form.valor} onChange={e=>setForm(f=>({...f,valor:formatInput(e.target.value)}))}/>
                   </div>
                   <div className="form-group">
                     <label className="form-label">Data</label>
@@ -673,7 +673,7 @@ function App() {
                       </div>
                       <div className="form-group">
                         <label className="form-label">Valor (R$)</label>
-                        <input className="form-input" type="number" min="0" step="0.01" placeholder="0,00" value={debitoForm.valor} onChange={e=>setDebitoForm(f=>({...f,valor:e.target.value}))}/>
+                        <input className="form-input" type="text" placeholder="R$ 0,00" value={debitoForm.valor} onChange={e=>setDebitoForm(f=>({...f,valor:formatInput(e.target.value)}))}/>
                       </div>
                       <div className="form-group">
                         <label className="form-label">Data</label>
@@ -746,9 +746,9 @@ function App() {
                             <div className="form-grid">
                               <div className="form-group">
                                 <label className="form-label">Valor</label>
-                                <input className="form-input" type="number" min="0" step="0.01" placeholder="0,00"
-                                  value={pagForm.debitoId===d.id?pagForm.valor:""}
-                                  onChange={e=>setPagForm({debitoId:d.id,valor:e.target.value,data:pagForm.debitoId===d.id?pagForm.data:today(),forma:pagForm.debitoId===d.id?pagForm.forma:"Pix"})}/>
+                                <input className="form-input" type="text" placeholder="R$ 0,00"
+                                value={pagForm.debitoId===d.id?pagForm.valor:""}
+                                onChange={e=>setPagForm({debitoId:d.id,valor:formatInput(e.target.value),data:pagForm.debitoId===d.id?pagForm.data:today(),forma:pagForm.debitoId===d.id?pagForm.forma:"Pix"})}/>
                               </div>
                               <div className="form-group">
                                 <label className="form-label">Data</label>
@@ -836,7 +836,7 @@ function App() {
                       </div>
                       <div className="form-group">
                         <label className="form-label">Valor (R$)</label>
-                        <input className="form-input" type="number" min="0" step="0.01" placeholder="0,00" value={empForm.valor} onChange={e=>setEmpForm(f=>({...f,valor:e.target.value}))}/>
+                        <input className="form-input" type="text" placeholder="R$ 0,00" value={empForm.valor} onChange={e=>setEmpForm(f=>({...f,valor:formatInput(e.target.value)}))}/>
                       </div>
                       <div className="form-group">
                         <label className="form-label">Data</label>
@@ -911,7 +911,7 @@ function App() {
                                 <label className="form-label">Valor</label>
                                 <input className="form-input" type="number" min="0" step="0.01" placeholder="0,00"
                                   value={recForm.empId===e.id?recForm.valor:""}
-                                  onChange={ev=>setRecForm({empId:e.id,valor:ev.target.value,data:recForm.empId===e.id?recForm.data:today(),forma:recForm.empId===e.id?recForm.forma:"Pix"})}/>
+                                  onChange={ev=>setRecForm({empId:e.id,valor:formatInput(ev.target.value),data:recForm.empId===e.id?recForm.data:today(),forma:recForm.empId===e.id?recForm.forma:"Pix"})}/>
                               </div>
                               <div className="form-group">
                                 <label className="form-label">Data</label>
