@@ -495,10 +495,10 @@ function App() {
                   </div>
                   <div className="form-group">
                     <label className="form-label">Origem</label>
-                    {form.descricao==="Suprimento"
+                    {(form.descricao==="Suprimento"||form.descricao==="Vale")
                       ?<select className="form-select" value={form.origem} onChange={e=>setForm(f=>({...f,origem:e.target.value}))}>
                           <option value="">Selecione...</option>
-                          {PESSOAS_SUPRIMENTO_ORIGEM.map(p=><option key={p}>{p}</option>)}
+                          {credoresList.map(p=><option key={p}>{p}</option>)}
                         </select>
                       :<select className="form-select" value={form.origem} onChange={e=>{
                           const val=e.target.value;
@@ -514,7 +514,7 @@ function App() {
                   </div>
                   <div className="form-group">
                     <label className="form-label">Destino</label>
-                    {form.descricao==="Suprimento"
+                    {(form.descricao==="Suprimento"||form.descricao==="Vale")
                       ?<input className="form-input" value="Lotérica" readOnly style={{opacity:.5,cursor:"not-allowed"}}/>
                       :form.descricao==="Recolhimento"&&form.origem==="Lotérica"
                       ?<input className="form-input" value="Banco" readOnly style={{opacity:.5,cursor:"not-allowed"}}/>
