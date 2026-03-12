@@ -234,3 +234,37 @@ tr:hover td { background: var(--surface2); }
   .form-grid { grid-template-columns: 1fr; }
   .main { padding: .75rem; padding-bottom: calc(var(--bnav-h) + .75rem); }
 }
+
+/* ── MODAL DE CONFIRMAÇÃO [F9] ── */
+.modal-overlay {
+  position: fixed; inset: 0; background: rgba(0,0,0,.45);
+  z-index: 10000; display: flex; align-items: center; justify-content: center; padding: 1rem;
+}
+.modal-box {
+  background: var(--surface); border-radius: 14px; padding: 1.75rem;
+  max-width: 380px; width: 100%; box-shadow: 0 20px 60px rgba(0,0,0,.2);
+  animation: modal-in .15s ease;
+}
+@keyframes modal-in {
+  from { opacity: 0; transform: scale(.96) translateY(6px); }
+  to   { opacity: 1; transform: scale(1)  translateY(0); }
+}
+
+/* ── TOAST [F14] ── */
+.toast-stack {
+  position: fixed; bottom: calc(var(--bnav-h, 0px) + 1rem); right: 1rem;
+  z-index: 9999; display: flex; flex-direction: column; gap: .5rem; max-width: 340px;
+}
+.toast {
+  display: flex; align-items: center; gap: .75rem; border-radius: 10px;
+  padding: .75rem 1rem; box-shadow: 0 4px 16px rgba(0,0,0,.12);
+  font-size: .82rem; animation: toast-in .2s ease;
+}
+@keyframes toast-in {
+  from { opacity: 0; transform: translateX(20px); }
+  to   { opacity: 1; transform: translateX(0); }
+}
+
+/* ── GRÁFICO DASHBOARD [F8] ── */
+.chart-wrap { overflow-x: auto; padding: .25rem 0; }
+.chart-wrap svg { display: block; }
