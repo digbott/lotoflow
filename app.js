@@ -470,7 +470,7 @@ function App({ onLogout, userEmail }) {
 
   // ── [F8] Dados do dashboard ───────────────────────────────────────────────
   const dashboardData = useMemo(() => {
-    // Saldo acumulado por dia (últimos 60 dias)
+    // Saldo acumulado por dia
     const byDay = {};
     transacoes.forEach(t => {
       byDay[t.data] = (byDay[t.data] || 0) + (t.tipo==="entrada" ? t.valor : -t.valor);
@@ -484,7 +484,8 @@ function App({ onLogout, userEmail }) {
     // Último dia
     const lastDate = sortedDates[sortedDates.length - 1];
     const lastDayTx = lastDate ? transacoes.filter(t=>t.data===lastDate).sort((a,b)=>String(a.id).padStart(36,'0').localeCompare(String(b.id).padStart(36,'0'))) : [];
-    const lastDaySaldo = byDay[lastDate] || 0;
+    // Saldo acumulado até o último dia (não apenas o delta do dia)
+    const lastDaySaldo = chartData.length ? chartData[chartData.length - 1].saldo : 0;
     // Mês atual
     const mes = new Date().toISOString().slice(0,7);
     const mesEntradas = transacoes.filter(t=>t.tipo==="entrada"&&t.data.startsWith(mes)).reduce((s,t)=>s+t.valor,0);
@@ -604,13 +605,20 @@ function App({ onLogout, userEmail }) {
                       {/* Linha de zero */}
                       <line x1="0" y1={H/2} x2={chartData.length*(W_BAR+2)} y2={H/2}
                         stroke="#e5e7eb" strokeWidth="1" strokeDasharray="3,2"/>
-                      {/* Labels primeiro e último */}
-                      {chartData.length > 0 && (
-                        <>
-                          <text x="0" y={H+16} fontSize="9" fill="#9ca3af" fontFamily="monospace">{chartData[0].date}</text>
-                          <text x={Math.max(0,(chartData.length-1)*(W_BAR+2)-30)} y={H+16} fontSize="9" fill="#9ca3af" fontFamily="monospace">{chartData[chartData.length-1].date}</text>
-                        </>
-                      )}
+                      {/* Labels primeiro e último — só mostra o último se houver distância suficiente */}
+                      {chartData.length > 0 && (() => {
+                        const firstX = 0;
+                        const lastX  = (chartData.length - 1) * (W_BAR + 2);
+                        const minGap = 55; // px mínimos entre os dois labels
+                        return (
+                          <>
+                            <text x={firstX} y={H+16} fontSize="9" fill="#9ca3af" fontFamily="monospace">{chartData[0].date}</text>
+                            {lastX - firstX >= minGap && (
+                              <text x={Math.max(0, lastX - 30)} y={H+16} fontSize="9" fill="#9ca3af" fontFamily="monospace">{chartData[chartData.length-1].date}</text>
+                            )}
+                          </>
+                        );
+                      })()}
                     </svg>
                   </div>
                 </>
@@ -639,7 +647,7 @@ function App({ onLogout, userEmail }) {
                       </table>
                     </div>
                     <div style={{padding:".875rem 1.25rem",borderTop:"1px solid var(--border)",display:"flex",justifyContent:"flex-end",alignItems:"center",gap:".75rem",background:"var(--surface2)"}}>
-                      <span style={{fontFamily:"var(--font-mono)",fontSize:".68rem",letterSpacing:"1px",textTransform:"uppercase",color:"var(--text-tertiary)"}}>Saldo do dia</span>
+                      <span style={{fontFamily:"var(--font-mono)",fontSize:".68rem",letterSpacing:"1px",textTransform:"uppercase",color:"var(--text-tertiary)"}}>Saldo acumulado</span>
                       <span style={{fontFamily:"var(--font-mono)",fontSize:"1rem",fontWeight:700,color:lastDaySaldo>=0?"var(--accent)":"var(--danger)"}}>
                         {lastDaySaldo>=0?"+":""}{formatCurrency(lastDaySaldo)}
                       </span>
