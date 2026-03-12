@@ -25,6 +25,7 @@ const BRL = new Intl.NumberFormat("pt-BR", { style:"currency", currency:"BRL" })
 const formatCurrency = (centavos) => BRL.format((centavos || 0) / 100);
 
 const formatInput = (v) => {
+  if (!v) return ""; // [N8] guard contra null/undefined
   const num = v.replace(/\D/g, "");
   if (!num) return "";
   return BRL.format(parseInt(num, 10) / 100);
@@ -38,7 +39,11 @@ const parseInput = (v) => {
 };
 
 // ── Helpers de data ──────────────────────────────────────────────────────────
-const today     = () => new Date().toISOString().split("T")[0];
+// [N4] today() usa horário local — toISOString() retorna UTC e causaria bug de fuso
+const today = () => {
+  const d = new Date();
+  return `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}-${String(d.getDate()).padStart(2,'0')}`;
+};
 const formatDate = (d) => {
   if (!d) return "—";
   const [y,m,day] = d.split("-");
@@ -59,7 +64,10 @@ const DEFAULT_ENTIDADES = [
 ];
 
 // ── Ícone SVG do logo ────────────────────────────────────────────────────────
-function LogoSVG({ size = 30, gradId = "gradLogo" }) {
+// [N9] gradId gerado via useId() para evitar colisão quando múltiplas instâncias coexistem no DOM
+function LogoSVG({ size = 30 }) {
+  const uid = React.useId();
+  const gradId = `grad-${uid.replace(/:/g,'')}`;
   return (
     <svg width={size} height={size} viewBox="0 0 80 80" fill="none" xmlns="http://www.w3.org/2000/svg">
       <defs>
@@ -229,7 +237,6 @@ function App({ onLogout, userEmail }) {
 
   // ── [F9] Modal de confirmação ─────────────────────────────────────────────
   const [modal, setModal] = useState(null);
-  const confirmRef = useRef(null);
   const confirm = useCallback((opts) => new Promise(resolve => {
     setModal({ ...opts, resolve });
   }), []);
@@ -305,7 +312,7 @@ function App({ onLogout, userEmail }) {
     setSyncStatus("salvando");
     pendingPatch.current = { ...(pendingPatch.current || {}), ...patch }; // [F7] acumula para flush
     if (saveTimerRef.current) clearTimeout(saveTimerRef.current);
-    saveTimerRef.current = setTimeout(() => doSave(patch), 800);
+    saveTimerRef.current = setTimeout(() => doSave(pendingPatch.current), 800); // [N1] usa acumulado
   }, [isViewer, doSave]);
 
   // [F14] Retry manual
@@ -329,7 +336,7 @@ function App({ onLogout, userEmail }) {
       if (filterData && t.data !== filterData) return false;
       return true;
     })
-    .sort((a,b) => b.data.localeCompare(a.data) || b.id.localeCompare(a.id)),
+    .sort((a,b) => b.data.localeCompare(a.data) || String(b.id).padStart(36,'0').localeCompare(String(a.id).padStart(36,'0'))),
   [transacoes, filterTipo, filterData]);
 
   const histDates = useMemo(() =>
@@ -348,6 +355,18 @@ function App({ onLogout, userEmail }) {
 
   const pagoPorDebito = (d) => pagoPorDebitoMap[d.id] ?? 0;
   const recPorEmp     = (e) => recPorEmpMap[e.id]     ?? 0;
+
+  // [N7] Derivações memoizadas — evita recalcular inline no JSX a cada render
+  const debitosAbertos  = useMemo(() => debitos.filter(d => (pagoPorDebitoMap[d.id]??0) <  d.valor), [debitos, pagoPorDebitoMap]);
+  const debitosQuit     = useMemo(() => debitos.filter(d => (pagoPorDebitoMap[d.id]??0) >= d.valor), [debitos, pagoPorDebitoMap]);
+  const empsAbertos     = useMemo(() => emprestimos.filter(e => (recPorEmpMap[e.id]??0) <  e.valor), [emprestimos, recPorEmpMap]);
+  const empsQuit        = useMemo(() => emprestimos.filter(e => (recPorEmpMap[e.id]??0) >= e.valor), [emprestimos, recPorEmpMap]);
+  const totalDevido     = useMemo(() => debitosAbertos.reduce((s,d)=>s+d.valor-(pagoPorDebitoMap[d.id]??0),0), [debitosAbertos, pagoPorDebitoMap]);
+  const totalEmprestado = useMemo(() => debitos.reduce((s,d)=>s+d.valor,0), [debitos]);
+  const totalPago       = useMemo(() => debitos.reduce((s,d)=>s+(pagoPorDebitoMap[d.id]??0),0), [debitos, pagoPorDebitoMap]);
+  const totalAReceber   = useMemo(() => empsAbertos.reduce((s,e)=>s+e.valor-(recPorEmpMap[e.id]??0),0), [empsAbertos, recPorEmpMap]);
+  const totalEmpOut     = useMemo(() => emprestimos.reduce((s,e)=>s+e.valor,0), [emprestimos]);
+  const totalRecebido   = useMemo(() => emprestimos.reduce((s,e)=>s+(recPorEmpMap[e.id]??0),0), [emprestimos, recPorEmpMap]);
 
   // ── Regras de negócio ─────────────────────────────────────────────────────
   const computeFluxo = (descricao, origem) => {
@@ -374,7 +393,7 @@ function App({ onLogout, userEmail }) {
       savePatch({ transacoes: next });
       return next;
     });
-    setForm(f => ({ ...f, descricao:"", descricao_livre:"", origem:"", destino:"", valor:"" }));
+    setForm(f => ({ ...f, descricao:"", descricao_livre:"", origem:"", destino:"", valor:"", data:today() })); // [N6] reseta data também
   };
 
   // ── Guard: redireciona tab inválida para viewer ───────────────────────────
@@ -464,7 +483,7 @@ function App({ onLogout, userEmail }) {
     });
     // Último dia
     const lastDate = sortedDates[sortedDates.length - 1];
-    const lastDayTx = lastDate ? transacoes.filter(t=>t.data===lastDate).sort((a,b)=>String(a.id).localeCompare(String(b.id))) : [];
+    const lastDayTx = lastDate ? transacoes.filter(t=>t.data===lastDate).sort((a,b)=>String(a.id).padStart(36,'0').localeCompare(String(b.id).padStart(36,'0'))) : [];
     const lastDaySaldo = byDay[lastDate] || 0;
     // Mês atual
     const mes = new Date().toISOString().slice(0,7);
@@ -487,7 +506,7 @@ function App({ onLogout, userEmail }) {
       <header className="header">
         <div className="logo">
           <div className="logo-icon" style={{background:"none",padding:0}}>
-            <LogoSVG size={30} gradId="gradHeader"/>
+            <LogoSVG size={30}/>
           </div>
           <div>
             <div className="logo-text">LotoFlow</div>
@@ -818,16 +837,7 @@ function App({ onLogout, userEmail }) {
 
         {/* ══ PAGAR E RECEBER ══ */}
         {tab==="debitos" && (() => {
-          const totalDevido     = debitos.reduce((s,d)=>s+Math.max(0,d.valor-pagoPorDebito(d)),0);
-          const totalEmprestado = debitos.reduce((s,d)=>s+d.valor,0);
-          const totalPago       = debitos.reduce((s,d)=>s+pagoPorDebito(d),0);
-          const debitosAbertos  = debitos.filter(d=>pagoPorDebito(d)<d.valor);
-          const debitosQuit     = debitos.filter(d=>pagoPorDebito(d)>=d.valor);
-          const totalAReceber   = emprestimos.reduce((s,e)=>s+Math.max(0,e.valor-recPorEmp(e)),0);
-          const totalEmpOut     = emprestimos.reduce((s,e)=>s+e.valor,0);
-          const totalRecebido   = emprestimos.reduce((s,e)=>s+recPorEmp(e),0);
-          const empsAbertos     = emprestimos.filter(e=>recPorEmp(e)<e.valor);
-          const empsQuit        = emprestimos.filter(e=>recPorEmp(e)>=e.valor);
+          // [N7] Variáveis movidas para useMemo no corpo do componente
           return (
             <>
               <div className="sub-tabs">
@@ -975,6 +985,9 @@ function App({ onLogout, userEmail }) {
                                 <label className="form-label">&nbsp;</label>
                                 <button className="btn btn-accent" onClick={()=>{
                                   if (pagForm.debitoId!==d.id || !parseInput(pagForm.valor)) return;
+                                  // [N5] Impede pagamento acima do saldo devedor
+                                  const restanteDev = d.valor - pagoPorDebito(d);
+                                  if (parseInput(pagForm.valor) > restanteDev) { addToast("Valor excede o saldo devedor.", "aviso"); return; }
                                   // [F5] UUID como ID do pagamento
                                   setDebitos(prev=>{
                                     const next=prev.map(x=>x.id===d.id?{...x,pagamentos:[...x.pagamentos,{id:genId(),valor:parseInput(pagForm.valor),data:pagForm.data,forma:pagForm.forma}]}:x);
@@ -1155,6 +1168,9 @@ function App({ onLogout, userEmail }) {
                                 <label className="form-label">&nbsp;</label>
                                 <button className="btn btn-accent" onClick={()=>{
                                   if (recForm.empId!==e.id || !parseInput(recForm.valor)) return;
+                                  // [N5] Impede recebimento acima do saldo do empréstimo
+                                  const restanteEmp = e.valor - recPorEmp(e);
+                                  if (parseInput(recForm.valor) > restanteEmp) { addToast("Valor excede o saldo do empréstimo.", "aviso"); return; }
                                   // [F5] UUID como ID
                                   setEmprestimos(prev=>{
                                     const next=prev.map(x=>x.id===e.id?{...x,recebimentos:[...x.recebimentos,{id:genId(),valor:parseInput(recForm.valor),data:recForm.data,forma:recForm.forma}]}:x);
@@ -1440,7 +1456,7 @@ function Boot() {
       <div style={{background:"#fff",borderRadius:16,padding:"2.5rem",boxShadow:"0 4px 24px rgba(0,0,0,.10)",width:"100%",maxWidth:360}}>
         <div style={{display:"flex",alignItems:"center",gap:10,marginBottom:"1.75rem"}}>
           <div style={{width:36,height:36,borderRadius:9,overflow:"hidden",flexShrink:0}}>
-            <LogoSVG size={36} gradId="gradLogin"/>
+            <LogoSVG size={36}/>
           </div>
           <div>
             <div style={{fontWeight:700,fontSize:"1rem"}}>LotoFlow</div>
