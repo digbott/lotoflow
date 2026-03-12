@@ -297,6 +297,7 @@ function App() {
   };
 
   const handleAdd = ()=>{
+    console.log("valor:", form.valor, "parsed:", parseInput(form.valor));
     if(!form.descricao||!form.valor||!form.data) return;
     const tipoFinal = computeFluxo(form.descricao,form.origem);
     const destinoFinal =
