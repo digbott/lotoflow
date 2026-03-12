@@ -50,6 +50,20 @@ const PESSOAS_SUPRIMENTO_ORIGEM = ["Banco","Outro"];
 const FORMAS_PAG = ["Pix","Boleto","Dinheiro"];
 
 const formatCurrency = (v) => new Intl.NumberFormat("pt-BR",{style:"currency",currency:"BRL"}).format(v||0);
+onst formatInput = (v) => {
+  const num = v.replace(/\D/g, "");
+  if (!num) return "";
+  const cents = parseInt(num, 10);
+  return new Intl.NumberFormat("pt-BR", {
+    style: "currency", currency: "BRL"
+  }).format(cents / 100);
+};
+
+const parseInput = (v) => {
+  const num = v.replace(/\D/g, "");
+  return num ? parseInt(num, 10) / 100 : "";
+};
+    
 const today = () => new Date().toISOString().split("T")[0];
 const formatDate = (d) => { if(!d) return "—"; const [y,m,day]=d.split("-"); return `${day}/${m}/${y}`; };
 
