@@ -10,6 +10,8 @@
     import { initializeApp }   from "https://www.gstatic.com/firebasejs/11.6.0/firebase-app.js";
     import { getFirestore, doc, getDoc, setDoc, serverTimestamp }
       from "https://www.gstatic.com/firebasejs/11.6.0/firebase-firestore.js";
+    import { getAuth, signInWithEmailAndPassword, signOut, onAuthStateChanged }
+    from "https://www.gstatic.com/firebasejs/11.6.0/firebase-auth.js";
 
     const app = initializeApp({
       
@@ -22,7 +24,10 @@
 
     });
     const db = getFirestore(app);
-
+    const auth = getAuth(app);
+    window.__auth = auth;
+    window.authLib = { signInWithEmailAndPassword, signOut, onAuthStateChanged };
+    
     // Expose to global scope for React app
     window.__db = db;
     window.firestoreLib = { doc, getDoc, setDoc, serverTimestamp };
@@ -239,7 +244,7 @@ const DEFAULT_ENTIDADES = [
 ];
 
 
-function App() {
+function App({ onLogout }) {
   const [tab, setTab] = useState("dashboard");
 
   const [transacoes, setTransacoes] = useState([]);
@@ -401,6 +406,9 @@ function App() {
             <span className="dot-live"/>
             {new Date().toLocaleDateString("pt-BR")}
           </div>
+          <button onClick={onLogout} style={{background:"none",border:"1px solid var(--border)",borderRadius:6,padding:".3rem .7rem",fontFamily:"var(--font-mono)",fontSize:".65rem",color:"var(--text-tertiary)",cursor:"pointer",flexShrink:0}}>
+          Sair
+          </button>
           {syncStatus==="carregando" && (
             <div style={{display:"flex",alignItems:"center",gap:5,flexShrink:0,fontFamily:"var(--font-mono)",fontSize:".66rem",color:"var(--warning)"}}>
               <span style={{width:6,height:6,borderRadius:"50%",background:"var(--warning)",display:"inline-block"}}/>Carregando...
@@ -1164,22 +1172,90 @@ function App() {
 
     // Wait for Firebase to be ready before rendering
     function Boot() {
-      const [ready, setReady] = React.useState(!!window.__firebaseReady);
-      React.useEffect(() => {
-        if (window.__firebaseReady) return;
-        const handler = () => setReady(true);
-        document.addEventListener("firebaseReady", handler);
-        return () => document.removeEventListener("firebaseReady", handler);
-      }, []);
-      if (!ready) return (
-        <div style={{display:"flex",alignItems:"center",justifyContent:"center",height:"100vh",
-          fontFamily:"'Plus Jakarta Sans',sans-serif",color:"#6b7280",gap:12}}>
-          <span style={{fontSize:"1.5rem"}}>🎰</span>
-          <span>Conectando ao banco de dados...</span>
-        </div>
-      );
-      return <App />;
+  const [ready, setReady] = React.useState(!!window.__firebaseReady);
+  const [user, setUser] = React.useState(null);
+  const [authLoading, setAuthLoading] = React.useState(true);
+  const [loginForm, setLoginForm] = React.useState({email:"", senha:""});
+  const [loginError, setLoginError] = React.useState("");
+  const [loginLoading, setLoginLoading] = React.useState(false);
+
+  React.useEffect(() => {
+    if (window.__firebaseReady) return;
+    const handler = () => setReady(true);
+    document.addEventListener("firebaseReady", handler);
+    return () => document.removeEventListener("firebaseReady", handler);
+  }, []);
+
+  React.useEffect(() => {
+    if (!ready) return;
+    const { onAuthStateChanged } = window.authLib;
+    const unsub = onAuthStateChanged(window.__auth, (u) => {
+      setUser(u);
+      setAuthLoading(false);
+    });
+    return () => unsub();
+  }, [ready]);
+
+  const handleLogin = async () => {
+    if (!loginForm.email || !loginForm.senha) return;
+    setLoginLoading(true);
+    setLoginError("");
+    try {
+      const { signInWithEmailAndPassword } = window.authLib;
+      await signInWithEmailAndPassword(window.__auth, loginForm.email, loginForm.senha);
+    } catch(e) {
+      setLoginError("Email ou senha incorretos.");
     }
+    setLoginLoading(false);
+  };
+
+  if (!ready || authLoading) return (
+    <div style={{display:"flex",alignItems:"center",justifyContent:"center",height:"100vh",
+      fontFamily:"'Plus Jakarta Sans',sans-serif",color:"#6b7280",gap:12}}>
+      <span style={{fontSize:"1.5rem"}}>🎰</span>
+      <span>Conectando...</span>
+    </div>
+  );
+
+  if (!user) return (
+    <div style={{display:"flex",alignItems:"center",justifyContent:"center",height:"100vh",background:"#f3f4f6",fontFamily:"'Plus Jakarta Sans',sans-serif"}}>
+      <div style={{background:"#fff",borderRadius:16,padding:"2.5rem",boxShadow:"0 4px 24px rgba(0,0,0,.10)",width:"100%",maxWidth:360}}>
+        <div style={{display:"flex",alignItems:"center",gap:10,marginBottom:"1.75rem"}}>
+          <div style={{width:36,height:36,background:"#2563eb",borderRadius:9,display:"flex",alignItems:"center",justifyContent:"center",fontSize:18}}>🎰</div>
+          <div>
+            <div style={{fontWeight:700,fontSize:"1rem"}}>LotoFlow</div>
+            <div style={{fontSize:".65rem",color:"#9ca3af",letterSpacing:".8px",textTransform:"uppercase"}}>Fluxo de Caixa</div>
+          </div>
+        </div>
+        <div style={{display:"flex",flexDirection:"column",gap:"1rem"}}>
+          <div style={{display:"flex",flexDirection:"column",gap:".35rem"}}>
+            <label style={{fontSize:".72rem",fontWeight:600,color:"#6b7280"}}>Email</label>
+            <input type="email" placeholder="seu@email.com"
+              style={{border:"1px solid #d1d5db",borderRadius:8,padding:".5rem .8rem",fontSize:".84rem",outline:"none",fontFamily:"inherit"}}
+              value={loginForm.email}
+              onChange={e=>setLoginForm(f=>({...f,email:e.target.value}))}
+              onKeyDown={e=>e.key==="Enter"&&handleLogin()}/>
+          </div>
+          <div style={{display:"flex",flexDirection:"column",gap:".35rem"}}>
+            <label style={{fontSize:".72rem",fontWeight:600,color:"#6b7280"}}>Senha</label>
+            <input type="password" placeholder="••••••••"
+              style={{border:"1px solid #d1d5db",borderRadius:8,padding:".5rem .8rem",fontSize:".84rem",outline:"none",fontFamily:"inherit"}}
+              value={loginForm.senha}
+              onChange={e=>setLoginForm(f=>({...f,senha:e.target.value}))}
+              onKeyDown={e=>e.key==="Enter"&&handleLogin()}/>
+          </div>
+          {loginError&&<div style={{fontSize:".78rem",color:"#dc2626",textAlign:"center"}}>{loginError}</div>}
+          <button onClick={handleLogin} disabled={loginLoading}
+            style={{background:"#2563eb",color:"#fff",border:"none",borderRadius:8,padding:".6rem 1rem",fontFamily:"inherit",fontSize:".85rem",fontWeight:600,cursor:"pointer",marginTop:".25rem"}}>
+            {loginLoading?"Entrando...":"Entrar"}
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+
+  return <App onLogout={()=>{ const {signOut}=window.authLib; signOut(window.__auth); }}/>;
+}
 
     ReactDOM.createRoot(document.getElementById('root')).render(<Boot />);
   </script>
