@@ -1264,11 +1264,14 @@ function App({ onLogout }) {
             style={{background:"#2563eb",color:"#fff",border:"none",borderRadius:8,padding:".6rem 1rem",fontFamily:"inherit",fontSize:".85rem",fontWeight:600,cursor:"pointer",marginTop:".25rem"}}>
             {loginLoading?"Entrando...":"Entrar"}
           </button>
+          <div style={{marginTop:"2rem",textAlign:"center",padding:"1.25rem",borderTop:"1px solid #e5e7eb",background:"#111827",borderRadius:"0 0 16px 16px",margin:"1.5rem -2.5rem -2.5rem -2.5rem"}}>
+  <img src="logo.png" alt="Logos Simeraion Systems" style={{height:36,opacity:.85,marginBottom:".4rem"}}/>
+  <div style={{fontFamily:"monospace",fontSize:".62rem",color:"#6b7280"}}>
+    © {new Date().getFullYear()} Logos Simeraion Systems · Todos os direitos reservados
+  </div>
+</div>
         </div>
       </div>
-    <div style={{marginTop:"1.5rem",textAlign:"center",fontFamily:"monospace",fontSize:".62rem",color:"#9ca3af"}}>
-  © {new Date().getFullYear()} Logos Simeraion Systems · Todos os direitos reservados
-</div>
     </div>
   );
 
