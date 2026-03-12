@@ -3,7 +3,7 @@
 <head>
   <meta charset="UTF-8"/>
   <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
-  <title>LotoFlow · Fluxo de Caixa</title>
+  <title>LotoFlow · Fluxo de Caixa para Loterias</title>
 
   <!-- Firebase -->
   <script type="module">
@@ -44,51 +44,33 @@
   <div id="root"></div>
 
   <script type="text/babel" data-presets="react">
-    const { useState, useMemo, useEffect, useRef, useCallback } = React;
+    const { useState, useMemo, useEffect } = React;
 
 
 const GOOGLE_FONTS = `@import url('https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;500;600;700;800&family=IBM+Plex+Mono:wght@400;500&display=swap');`;
 
 const DEFAULT_TIPO_FLUXO = { Repasse:"saida", Recolhimento:"saida", Suprimento:"entrada", Vale:"entrada" };
 const DEFAULT_TIPOS = ["Repasse","Recolhimento","Suprimento","Vale"];
-const PESSOAS_SUPRIMENTO_ORIGEM = ["Banco","Outro"];
 const FORMAS_PAG = ["Pix","Boleto","Dinheiro"];
+const CURRENT_YEAR = new Date().getFullYear();
 
-const formatCurrency = (v) => new Intl.NumberFormat("pt-BR",{style:"currency",currency:"BRL"}).format(v||0);
+const BRL = new Intl.NumberFormat("pt-BR",{style:"currency",currency:"BRL"});
+const formatCurrency = (v) => BRL.format(v||0);
 const formatInput = (v) => {
   const num = v.replace(/\D/g, "");
   if (!num) return "";
-  const cents = parseInt(num, 10);
-  return new Intl.NumberFormat("pt-BR", {
-    style: "currency", currency: "BRL"
-  }).format(cents / 100);
+  return BRL.format(parseInt(num, 10) / 100);
 };
 
 const parseInput = (v) => {
+  if (!v) return 0;
   const num = v.replace(/\D/g, "");
-  return num ? parseInt(num, 10) / 100 : "";
+  return num ? parseInt(num, 10) / 100 : 0;
 };
     
 const today = () => new Date().toISOString().split("T")[0];
 const formatDate = (d) => { if(!d) return "—"; const [y,m,day]=d.split("-"); return `${day}/${m}/${y}`; };
 
-const SEED_DATA = [
-  {id:1,tipo:"saida",  descricao:"Recolhimento",descricao_livre:"",               origem:"Lotérica",destino:"Leumim",  valor:1250,data:"2025-03-01"},
-  {id:2,tipo:"entrada",descricao:"Vale",         descricao_livre:"Vale funcionário",origem:"Lotérica",destino:"Elielma", valor:320, data:"2025-03-03"},
-  {id:3,tipo:"saida",  descricao:"Recolhimento",descricao_livre:"",               origem:"Lotérica",destino:"Leumim",  valor:740, data:"2025-03-04"},
-  {id:4,tipo:"saida",  descricao:"Repasse",      descricao_livre:"",               origem:"Lotérica",destino:"Regiane", valor:1100,data:"2025-03-05"},
-  {id:5,tipo:"entrada",descricao:"Suprimento",   descricao_livre:"",               origem:"Leumim",  destino:"Lotérica",valor:1540,data:"2025-03-06"},
-  {id:6,tipo:"saida",  descricao:"Recolhimento",descricao_livre:"",               origem:"Lotérica",destino:"Leumim",  valor:2100,data:"2025-03-08"},
-  {id:7,tipo:"saida",  descricao:"Repasse",      descricao_livre:"",               origem:"Lotérica",destino:"Elielma", valor:210, data:"2025-03-08"},
-  {id:8,tipo:"entrada",descricao:"Suprimento",   descricao_livre:"Depósito caixa",  origem:"Regiane", destino:"Lotérica",valor:500, data:"2025-03-09"},
-];
-const SEED_DEBITOS = [
-  {id:1,credor:"Thaliny",valor:2000,data:"2025-03-01",descricao:"Empréstimo emergencial",pagamentos:[{id:1,valor:500,data:"2025-03-05",forma:"Pix"}]},
-  {id:2,credor:"Leumim", valor:1500,data:"2025-03-08",descricao:"Cobertura de caixa",    pagamentos:[]},
-];
-const SEED_EMPRESTIMOS = [
-  {id:1,devedor:"Elielma",valor:800,data:"2025-03-03",descricao:"Adiantamento",recebimentos:[{id:1,valor:200,data:"2025-03-10",forma:"Dinheiro"}]},
-];
 
 const styles = `
   ${GOOGLE_FONTS}
@@ -248,7 +230,7 @@ function App({ onLogout }) {
   const [tab, setTab] = useState("dashboard");
 
   const [transacoes, setTransacoes] = useState([]);
-  const [nextId, setNextId] = useState(SEED_DATA.length + 1);
+  const [nextId, setNextId] = useState(1);
   const [filterTipo, setFilterTipo] = useState("todos");
   const [filterData, setFilterData] = useState("");
 
@@ -302,8 +284,7 @@ function App({ onLogout }) {
   };
 
   const handleAdd = ()=>{
-    console.log("valor:", form.valor, "parsed:", parseInput(form.valor));
-    if(!form.descricao||!form.valor||!form.data) return;
+    if(!form.descricao||!parseInput(form.valor)||!form.data) return;
     const tipoFinal = computeFluxo(form.descricao,form.origem);
     const destinoFinal =
       form.descricao==="Suprimento" ? "Lotérica"
@@ -1161,9 +1142,7 @@ function App({ onLogout }) {
       <footer style={{textAlign:"center",padding:"1.5rem 1rem",borderTop:"1px solid var(--border)",background:"#111827"}}>
   <img src="logo.png" alt="Logos Simeraion Systems" style={{height:48,opacity:.85,marginBottom:".5rem"}}/>
   <div style={{fontFamily:"var(--font-mono)",fontSize:".65rem",color:"#6b7280"}}>
-    © {new Date().getFullYear()} Logos Simeraion Systems · Todos os direitos reservados
-  </div>
-</footer>
+    © {CURRENT_YEAR} Logos Simeraion Systems · Todos os direitos reservados
       </div>
     </>
   );
@@ -1264,11 +1243,10 @@ function App({ onLogout }) {
             style={{background:"#2563eb",color:"#fff",border:"none",borderRadius:8,padding:".6rem 1rem",fontFamily:"inherit",fontSize:".85rem",fontWeight:600,cursor:"pointer",marginTop:".25rem"}}>
             {loginLoading?"Entrando...":"Entrar"}
           </button>
-          <div style={{marginTop:"2rem",textAlign:"center",padding:"1.25rem",borderTop:"1px solid #e5e7eb",background:"#111827",borderRadius:"0 0 16px 16px",margin:"1.5rem -2.5rem -2.5rem -2.5rem"}}>
+          <div style={{textAlign:"center",padding:"1.25rem",borderTop:"1px solid #e5e7eb",background:"#111827",borderRadius:"0 0 16px 16px",margin:"1.5rem -2.5rem -2.5rem -2.5rem"}}>
   <img src="logo.png" alt="Logos Simeraion Systems" style={{height:36,opacity:.85,marginBottom:".4rem"}}/>
   <div style={{fontFamily:"monospace",fontSize:".62rem",color:"#6b7280"}}>
-    © {new Date().getFullYear()} Logos Simeraion Systems · Todos os direitos reservados
-  </div>
+    © {CURRENT_YEAR} Logos Simeraion Systems · Todos os direitos reservados  </div>
 </div>
         </div>
       </div>
