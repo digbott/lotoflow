@@ -189,7 +189,7 @@ function App({ onLogout, userEmail }) {
   const [transacoes, setTransacoes] = useState([]);
   const [filterTipo, setFilterTipo] = useState("todos");
   const [filterData, setFilterData] = useState("");
-  const [form, setForm] = useState({ descricao:"", descricao_livre:"", origem:"", destino:"", valor:"", data:today() });
+  const [form, setForm] = useState({ descricao:"", descricao_livre:"", origem:"", destino:"", valor:"", data:today(), observacao:"" });
 
   // ── [F16] Paginação do histórico ──────────────────────────────────────────
   const PAGE_SIZE = 50;
@@ -393,7 +393,7 @@ function App({ onLogout, userEmail }) {
       savePatch({ transacoes: next });
       return next;
     });
-    setForm(f => ({ ...f, descricao:"", descricao_livre:"", origem:"", destino:"", valor:"", data:today() })); // [N6] reseta data também
+    setForm(f => ({ ...f, descricao:"", descricao_livre:"", origem:"", destino:"", valor:"", data:today(), observacao:"" }));
   };
 
   // ── Guard: redireciona tab inválida para viewer ───────────────────────────
@@ -585,19 +585,24 @@ function App({ onLogout, userEmail }) {
                   <div className="table-card">
                     <div className="table-scroll">
                       <table>
-                        <thead><tr><th>Tipo</th><th>Descrição</th><th>Origem → Destino</th><th>Valor</th></tr></thead>
+                        <thead><tr><th>Ação</th><th>Descrição</th><th>Valor</th></tr></thead>
                         <tbody>
-                          {lastDayTx.map(t => (
+                          {lastDayTx.map(t => {
+                            const partes = [t.origem, t.descricao, t.destino].filter(Boolean);
+                            const descricaoComposta = partes.length ? partes.join(" · ") : "—";
+                            return (
                             <tr key={t.id}>
-                              <td>
+                              <td style={{whiteSpace:"nowrap"}}>
                                 <span className={`badge badge-${t.tipo}`}>{t.tipo==="entrada"?"↑ Entrada":"↓ Saída"}</span>
-                                {" "}<span style={{fontSize:".78rem",color:"var(--text-tertiary)"}}>{t.descricao}</span>
                               </td>
-                              <td style={{color:"var(--text-tertiary)",fontSize:".82rem"}}>{t.descricao_livre||"—"}</td>
-                              <td style={{fontSize:".8rem",color:"var(--text-tertiary)"}}>{t.origem||"—"} → {t.destino||"—"}</td>
+                              <td style={{fontSize:".82rem"}}>
+                                <span style={{color:"var(--text)"}}>{descricaoComposta}</span>
+                                {t.observacao && <span style={{display:"block",fontSize:".75rem",color:"var(--text-tertiary)",marginTop:".1rem"}}>{t.observacao}</span>}
+                              </td>
                               <td className={`val-${t.tipo}`}>{t.tipo==="entrada"?"+":"-"}{formatCurrency(t.valor)}</td>
                             </tr>
-                          ))}
+                            );
+                          })}
                         </tbody>
                       </table>
                     </div>
@@ -675,6 +680,10 @@ function App({ onLogout, userEmail }) {
                   <label className="form-label">Data</label>
                   <input className="form-input" type="date" value={form.data} onChange={e=>setForm(f=>({...f,data:e.target.value}))}/>
                 </div>
+                <div className="form-group" style={{gridColumn:"span 2"}}>
+                  <label className="form-label">Observação <span style={{fontWeight:400,color:"var(--text-tertiary)"}}>(opcional)</span></label>
+                  <input className="form-input" type="text" placeholder="Detalhe adicional..." value={form.observacao||""} onChange={e=>setForm(f=>({...f,observacao:e.target.value}))}/>
+                </div>
                 <div className="form-group">
                   <label className="form-label">&nbsp;</label>
                   <button className="btn btn-accent" onClick={handleAdd}>+ Registrar</button>
@@ -686,17 +695,21 @@ function App({ onLogout, userEmail }) {
             <div className="table-card">
               <div className="table-scroll">
                 <table>
-                  <thead><tr><th>Data</th><th>Ação</th><th>Descrição</th><th>De → Para</th><th>Valor</th><th></th></tr></thead>
+                  <thead><tr><th>Data</th><th>Ação</th><th>Descrição</th><th>Valor</th><th></th></tr></thead>
                   <tbody>
-                    {[...transacoes].sort((a,b)=>b.data.localeCompare(a.data)).map(t => (
+                    {[...transacoes].sort((a,b)=>b.data.localeCompare(a.data)).map(t => {
+                      const partes = [t.origem, t.descricao, t.destino].filter(Boolean);
+                      const descricaoComposta = partes.length ? partes.join(" · ") : "—";
+                      return (
                       <tr key={t.id}>
                         <td style={{fontFamily:"var(--font-mono)",fontSize:".78rem",color:"var(--text-tertiary)"}}>{formatDate(t.data)}</td>
                         <td>
                           <span className={`badge badge-${t.tipo}`}>{t.tipo==="entrada"?"↑ Entrada":"↓ Saída"}</span>
-                          {" "}<span style={{fontSize:".78rem",color:"var(--text-tertiary)"}}>{t.descricao}</span>
                         </td>
-                        <td style={{color:"var(--text-tertiary)",fontSize:".82rem"}}>{t.descricao_livre||"—"}</td>
-                        <td style={{fontSize:".8rem",color:"var(--text-tertiary)"}}>{t.origem||"—"} → {t.destino||"—"}</td>
+                        <td style={{fontSize:".82rem"}}>
+                          <span style={{color:"var(--text)"}}>{descricaoComposta}</span>
+                          {t.observacao && <span style={{display:"block",fontSize:".75rem",color:"var(--text-tertiary)",marginTop:".1rem"}}>{t.observacao}</span>}
+                        </td>
                         <td className={`val-${t.tipo}`}>{t.tipo==="entrada"?"+":"-"}{formatCurrency(t.valor)}</td>
                         <td>
                           {/* [F9] Exclusão com confirmação */}
@@ -706,7 +719,8 @@ function App({ onLogout, userEmail }) {
                           </button>
                         </td>
                       </tr>
-                    ))}
+                      );
+                    })}
                   </tbody>
                 </table>
               </div>
@@ -755,19 +769,24 @@ function App({ onLogout, userEmail }) {
                               </div>
                               <table style={{width:"100%",borderCollapse:"collapse",minWidth:480}}>
                                 <tbody>
-                                  {dayTx.map(t => (
+                                  {dayTx.map(t => {
+                                    const partes = [t.origem, t.descricao, t.destino].filter(Boolean);
+                                    const descricaoComposta = partes.length ? partes.join(" · ") : "—";
+                                    return (
                                     <tr key={t.id}>
                                       <td style={{padding:".7rem 1rem",whiteSpace:"nowrap"}}>
                                         <span className={`badge badge-${t.tipo}`}>{t.tipo==="entrada"?"↑ Entrada":"↓ Saída"}</span>
-                                        {" "}<span style={{fontSize:".78rem",color:"var(--text-tertiary)"}}>{t.descricao}</span>
                                       </td>
-                                      <td style={{padding:".7rem .5rem",color:"var(--text-tertiary)",fontSize:".82rem"}}>{t.descricao_livre||"—"}</td>
-                                      <td style={{padding:".7rem .5rem",fontSize:".8rem",color:"var(--text-tertiary)",whiteSpace:"nowrap"}}>{t.origem||"—"} → {t.destino||"—"}</td>
+                                      <td style={{padding:".7rem .5rem",fontSize:".82rem"}}>
+                                        <span style={{color:"var(--text)"}}>{descricaoComposta}</span>
+                                        {t.observacao && <span style={{display:"block",fontSize:".75rem",color:"var(--text-tertiary)",marginTop:".1rem"}}>{t.observacao}</span>}
+                                      </td>
                                       <td style={{padding:".7rem 1rem",textAlign:"right",fontFamily:"var(--font-mono)",fontWeight:600,whiteSpace:"nowrap"}} className={`val-${t.tipo}`}>
                                         {t.tipo==="entrada"?"+":"-"}{formatCurrency(t.valor)}
                                       </td>
                                     </tr>
-                                  ))}
+                                    );
+                                  })}
                                 </tbody>
                               </table>
                               <div style={{padding:".6rem 1rem",borderTop:"1px solid var(--border)",borderBottom:"1px solid var(--border)",display:"flex",justifyContent:"flex-end",alignItems:"center",gap:".75rem",background:"var(--surface2)"}}>
