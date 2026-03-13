@@ -240,11 +240,11 @@ function App({ onLogout, userEmail }) {
       const isEntidade = entOrigem?.roles.includes("entidade");
       // "Recolheu para" de Operador → Entrada no Cofre
       if (t.descricao === "Recolheu para" && isOp) {
-        items.push({ id: t.id, tipo:"entrada", valor:t.valor, data:t.data, descricao:`Recolheu para · ${t.origem}`, origem:"auto" });
+        items.push({ id: t.id, tipo:"entrada", valor:t.valor, data:t.data, descricao:`${t.origem} · Recolheu para · ${t.destino||"—"}`, origem:"auto" });
       }
       // "Forneceu recurso para" de Parceiro ou Entidade → Entrada no Cofre
       if (t.descricao === "Forneceu recurso para" && (isParceiro || isEntidade)) {
-        items.push({ id: t.id, tipo:"entrada", valor:t.valor, data:t.data, descricao:`Forneceu recurso para · ${t.origem||"—"}`, origem:"auto" });
+        items.push({ id: t.id, tipo:"entrada", valor:t.valor, data:t.data, descricao:`${t.origem||"—"} · Forneceu recurso para · ${t.destino||"—"}`, origem:"auto" });
       }
     });
     return items;
@@ -541,15 +541,7 @@ function App({ onLogout, userEmail }) {
     const lastDayTx = lastDate ? transacoes.filter(t=>t.data===lastDate).sort((a,b)=>String(a.id).padStart(36,'0').localeCompare(String(b.id).padStart(36,'0'))) : [];
     // Saldo acumulado até o último dia (não apenas o delta do dia)
     const lastDaySaldo = chartData.length ? chartData[chartData.length - 1].saldo : 0;
-    // Cofre
-    const operadoresSet = new Set(entidades.filter(e=>e.roles.includes("operador")).map(e=>e.nome));
-    const repassesDia = lastDate
-      ? transacoes.filter(t => t.data===lastDate && t.descricao==="Repasse" && t.destino==="Lotérica")
-      : [];
-    const repassesOp    = repassesDia.filter(t =>  operadoresSet.has(t.origem)).reduce((s,t)=>s+t.valor,0);
-    const repassesNaoOp = repassesDia.filter(t => !operadoresSet.has(t.origem)).reduce((s,t)=>s+t.valor,0);
-    const cofre = (repassesOp - lastDaySaldo) + repassesNaoOp;
-    return { lastDate, lastDayTx, lastDaySaldo, cofre, chartData: chartData.slice(-30) };
+    return { lastDate, lastDayTx, lastDaySaldo, chartData: chartData.slice(-30) };
   }, [transacoes, entidades]);
 
   // ══════════════════════════════════════════════════════════════════════════
@@ -615,7 +607,7 @@ function App({ onLogout, userEmail }) {
 
         {/* ══ DASHBOARD ══ */}
         {tab==="dashboard" && (() => {
-          const { lastDate, lastDayTx, lastDaySaldo, cofre } = dashboardData;
+          const { lastDate, lastDayTx, lastDaySaldo } = dashboardData;
           return (
             <>
               {/* KPIs */}
@@ -627,7 +619,7 @@ function App({ onLogout, userEmail }) {
                 </div>
                 <div className="kpi-card" style={{"--accent-color":"var(--warning)"}}>
                   <div className="kpi-label">Cofre</div>
-                  <div className="kpi-value" style={{color:"var(--warning)"}}>{formatCurrency(cofre)}</div>
+                  <div className="kpi-value" style={{color:"var(--warning)"}}>{formatCurrency(cofreSaldo)}</div>
                 </div>
               </div>
 
