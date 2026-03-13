@@ -59,7 +59,7 @@ const genId = () => {
 // ── [F13] DEFAULT_ENTIDADES sem nomes pessoais reais ────────────────────────
 // Dados reais vivem apenas no Firestore protegido por autenticação.
 const DEFAULT_ENTIDADES = [
-  { nome:"Lotérica", roles:["origem_destino"] },
+  { nome:"Lotérica", roles:["entidade"] },
   { nome:"Banco",    roles:["credor"] },
 ];
 
@@ -176,7 +176,7 @@ function App({ onLogout, userEmail }) {
     ["lancamentos","➕","Lançar",   "Lançamentos"],
     ["historico",  "📋","Histórico","Histórico"],
     ["debitos",    "💳","Contas",   "Pagar/Receber"],
-    ["cadastros",  "⚙️","Config",  "Cadastros"],
+    ["cadastros",  "⚙️","Config",  "Cadastro"],
   ];
   const TABS = isViewer
     ? ALL_TABS.filter(([k]) => ["dashboard","historico","debitos"].includes(k))
@@ -204,10 +204,10 @@ function App({ onLogout, userEmail }) {
   // ── Estado: Entidades ─────────────────────────────────────────────────────
   const [entidades,  setEntidades]  = useState(DEFAULT_ENTIDADES);
   const [cadEditEnt, setCadEditEnt] = useState({ idx:null, nome:"", roles:[] });
-  const [cadNewEnt,  setCadNewEnt]  = useState({ nome:"", roles:["origem_destino"] });
+  const [cadNewEnt,  setCadNewEnt]  = useState({ nome:"", roles:["entidade"] });
 
   // Listas derivadas
-  const pessoasList   = useMemo(() => entidades.filter(e=>e.roles.includes("origem_destino")).map(e=>e.nome), [entidades]);
+  const pessoasList   = useMemo(() => entidades.filter(e=>e.roles.includes("entidade")).map(e=>e.nome), [entidades]);
   const credoresList  = useMemo(() => entidades.filter(e=>e.roles.includes("credor")).map(e=>e.nome),         [entidades]);
   const devedoresList = useMemo(() => entidades.filter(e=>e.roles.includes("devedor")).map(e=>e.nome),        [entidades]);
 
@@ -556,15 +556,19 @@ function App({ onLogout, userEmail }) {
 
         {/* ══ DASHBOARD ══ */}
         {tab==="dashboard" && (() => {
-          const { lastDate, lastDayTx, lastDaySaldo, mesEntradas, mesSaidas } = dashboardData;
+          const { lastDate, lastDayTx, lastDaySaldo, chartData, mesEntradas, mesSaidas } = dashboardData;
+          // [F8] Escala do mini gráfico
+          const maxAbs = chartData.length ? Math.max(...chartData.map(d=>Math.abs(d.saldo)), 1) : 1;
+          const H = 80; // altura em px do gráfico SVG
+          const W_BAR = Math.max(4, Math.min(18, Math.floor(560 / Math.max(chartData.length,1)) - 2));
           return (
             <>
               {/* KPIs */}
               <div className="kpi-grid" style={{marginBottom:"1.25rem"}}>
-                <div className="kpi-card" style={{"--accent-color":lastDaySaldo>=0?"var(--accent)":"var(--danger)"}}>
-                  <div className="kpi-label">Saldo do Dia</div>
-                  <div className="kpi-value" style={{color:lastDaySaldo>=0?"var(--accent)":"var(--danger)"}}>{formatCurrency(lastDaySaldo)}</div>
-                  <div className="kpi-sub">{lastDaySaldo>=0?"✓ Positivo":"✗ Negativo"}</div>
+                <div className="kpi-card" style={{"--accent-color":saldo>=0?"var(--accent)":"var(--danger)"}}>
+                  <div className="kpi-label">Saldo Atual</div>
+                  <div className="kpi-value" style={{color:saldo>=0?"var(--accent)":"var(--danger)"}}>{formatCurrency(saldo)}</div>
+                  <div className="kpi-sub">{saldo>=0?"✓ Positivo":"✗ Negativo"}</div>
                 </div>
                 <div className="kpi-card" style={{"--accent-color":"var(--success)"}}>
                   <div className="kpi-label">Entradas no mês</div>
@@ -578,6 +582,47 @@ function App({ onLogout, userEmail }) {
                 </div>
               </div>
 
+              {/* [F8] Mini gráfico de evolução de saldo */}
+              {chartData.length > 1 && (
+                <>
+                  <div className="section-title">Evolução do Saldo (últimos {chartData.length} dias)</div>
+                  <div className="form-card" style={{marginBottom:"1.25rem",padding:"1rem 1.25rem",overflowX:"auto"}}>
+                    <svg width="100%" viewBox={`0 0 ${Math.max(chartData.length*(W_BAR+2),200)} ${H+24}`} preserveAspectRatio="xMinYMin meet" style={{display:"block",minWidth:200}}>
+                      {chartData.map((d,i) => {
+                        const barH = Math.max(2, (Math.abs(d.saldo)/maxAbs)*(H-4));
+                        const isPos = d.saldo >= 0;
+                        const x = i*(W_BAR+2);
+                        const y = isPos ? (H/2 - barH) : H/2;
+                        return (
+                          <g key={i}>
+                            <rect x={x} y={y} width={W_BAR} height={barH}
+                              fill={isPos?"#059669":"#dc2626"} opacity={0.75} rx={2}>
+                              <title>{d.date}: {formatCurrency(d.saldo)}</title>
+                            </rect>
+                          </g>
+                        );
+                      })}
+                      {/* Linha de zero */}
+                      <line x1="0" y1={H/2} x2={chartData.length*(W_BAR+2)} y2={H/2}
+                        stroke="#e5e7eb" strokeWidth="1" strokeDasharray="3,2"/>
+                      {/* Labels primeiro e último — só mostra o último se houver distância suficiente */}
+                      {chartData.length > 0 && (() => {
+                        const firstX = 0;
+                        const lastX  = (chartData.length - 1) * (W_BAR + 2);
+                        const minGap = 55; // px mínimos entre os dois labels
+                        return (
+                          <>
+                            <text x={firstX} y={H+16} fontSize="9" fill="#9ca3af" fontFamily="monospace">{chartData[0].date}</text>
+                            {lastX - firstX >= minGap && (
+                              <text x={Math.max(0, lastX - 30)} y={H+16} fontSize="9" fill="#9ca3af" fontFamily="monospace">{chartData[chartData.length-1].date}</text>
+                            )}
+                          </>
+                        );
+                      })()}
+                    </svg>
+                  </div>
+                </>
+              )}
 
               {lastDate ? (
                 <>
@@ -601,7 +646,12 @@ function App({ onLogout, userEmail }) {
                         </tbody>
                       </table>
                     </div>
-
+                    <div style={{padding:".875rem 1.25rem",borderTop:"1px solid var(--border)",display:"flex",justifyContent:"flex-end",alignItems:"center",gap:".75rem",background:"var(--surface2)"}}>
+                      <span style={{fontFamily:"var(--font-mono)",fontSize:".68rem",letterSpacing:"1px",textTransform:"uppercase",color:"var(--text-tertiary)"}}>Saldo acumulado</span>
+                      <span style={{fontFamily:"var(--font-mono)",fontSize:"1rem",fontWeight:700,color:lastDaySaldo>=0?"var(--accent)":"var(--danger)"}}>
+                        {lastDaySaldo>=0?"+":""}{formatCurrency(lastDaySaldo)}
+                      </span>
+                    </div>
                   </div>
                 </>
               ) : (
@@ -743,20 +793,9 @@ function App({ onLogout, userEmail }) {
                     ? <div className="empty">Nenhuma transação encontrada.</div>
                     : <>
                         {/* [F16] Renderiza apenas as datas da página atual */}
-                        {(() => {
-                          // Saldo acumulado: calcula saldo anterior a cada data exibida,
-                          // considerando TODAS as transações (não só as filtradas)
-                          const allDates = [...new Set(transacoes.map(t=>t.data))].sort();
-                          const accumByDate = {};
-                          let acc = 0;
-                          allDates.forEach(d => {
-                            const delta = transacoes.filter(t=>t.data===d).reduce((s,t)=>t.tipo==="entrada"?s+t.valor:s-t.valor,0);
-                            acc += delta;
-                            accumByDate[d] = acc;
-                          });
-                          return pagedDates.map(date => {
+                        {pagedDates.map(date => {
                           const dayTx    = filteredTx.filter(t=>t.data===date);
-                          const daySaldo = accumByDate[date] ?? 0;
+                          const daySaldo = dayTx.reduce((s,t)=>t.tipo==="entrada"?s+t.valor:s-t.valor, 0);
                           return (
                             <div key={date}>
                               <div style={{padding:".45rem 1rem",background:"var(--surface2)",borderBottom:"1px solid var(--border)"}}>
@@ -787,8 +826,7 @@ function App({ onLogout, userEmail }) {
                               </div>
                             </div>
                           );
-                          });
-                        })()}
+                        })}
                         {/* [F16] Botão carregar mais */}
                         {pagedDates.length < histDates.length && (
                           <div style={{padding:"1rem",textAlign:"center",borderTop:"1px solid var(--border)"}}>
@@ -1188,9 +1226,9 @@ function App({ onLogout, userEmail }) {
         {/* ══ CADASTROS ══ (somente admin) */}
         {tab==="cadastros" && !isViewer && (
           <>
-            <div className="section-title">Tipos de Lançamento</div>
+            <div className="section-title">Ações de Lançamento</div>
             <div className="table-card" style={{marginBottom:"1.5rem"}}>
-              <div className="table-header"><span className="table-header-title">Tipos cadastrados</span></div>
+              <div className="table-header"><span className="table-header-title">Ações Cadastradas</span></div>
               <div className="table-scroll">
                 <table>
                   <thead><tr><th>Nome</th><th>Fluxo padrão</th><th></th></tr></thead>
@@ -1253,7 +1291,7 @@ function App({ onLogout, userEmail }) {
 
             <div className="section-title">Pessoas e Entidades</div>
             <p style={{fontSize:".78rem",color:"var(--text-tertiary)",marginBottom:"1rem",fontFamily:"var(--font-mono)"}}>
-              Cada entidade pode ter um ou mais papéis: Origem/Destino, Credor, Devedor e/ou Operador.
+              Cada entidade pode ter um ou mais papéis: Entidade, Parceiro, Operador, Credor e/ou Devedor.
             </p>
             <div className="table-card" style={{marginBottom:"2rem"}}>
               <div className="table-scroll">
@@ -1261,8 +1299,8 @@ function App({ onLogout, userEmail }) {
                   <thead><tr><th>Nome</th><th>Funções</th><th></th></tr></thead>
                   <tbody>
                     {entidades.map((e,idx) => {
-                      const ROLE_LABELS = { origem_destino:"Origem/Destino", credor:"Credor", devedor:"Devedor", operador:"Operador" };
-                      const ALL_ROLES   = ["origem_destino","credor","devedor","operador"];
+                      const ROLE_LABELS = { entidade:"Entidade", parceiro:"Parceiro", operador:"Operador", credor:"Credor", devedor:"Devedor" };
+                      const ALL_ROLES   = ["entidade","parceiro","operador","credor","devedor"];
                       const isEditing   = cadEditEnt.idx===idx;
                       return (
                         <tr key={e.nome}>
@@ -1320,7 +1358,7 @@ function App({ onLogout, userEmail }) {
               <div style={{padding:"1rem 1.25rem",borderTop:"1px solid var(--border)",display:"flex",gap:".75rem",alignItems:"center",flexWrap:"wrap"}}>
                 <input className="form-input" style={{maxWidth:180}} placeholder="Nome..." value={cadNewEnt.nome} onChange={e=>setCadNewEnt(s=>({...s,nome:e.target.value}))}/>
                 <div style={{display:"flex",gap:".75rem",flexWrap:"wrap"}}>
-                  {[["origem_destino","Origem/Destino"],["credor","Credor"],["devedor","Devedor"],["operador","Operador"]].map(([r,l])=>(
+                  {[["entidade","Entidade"],["parceiro","Parceiro"],["operador","Operador"],["credor","Credor"],["devedor","Devedor"]].map(([r,l])=>(
                     <label key={r} style={{display:"flex",alignItems:"center",gap:".3rem",fontSize:".78rem",color:"var(--text-secondary)",cursor:"pointer"}}>
                       <input type="checkbox" checked={cadNewEnt.roles.includes(r)}
                         onChange={ev=>setCadNewEnt(s=>({...s,roles:ev.target.checked?[...s.roles,r]:s.roles.filter(x=>x!==r)}))}/>
@@ -1332,7 +1370,7 @@ function App({ onLogout, userEmail }) {
                   const nome = cadNewEnt.nome.trim();
                   if (!nome || cadNewEnt.roles.length===0 || entidades.find(e=>e.nome===nome)) return;
                   setEntidades(prev=>{const next=[...prev,{nome,roles:cadNewEnt.roles}];savePatch({entidades:next});return next;});
-                  setCadNewEnt({nome:"",roles:["origem_destino"]});
+                  setCadNewEnt({nome:"",roles:["entidade"]});
                 }}>+ Adicionar</button>
               </div>
             </div>
