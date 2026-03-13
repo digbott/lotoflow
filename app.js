@@ -491,12 +491,16 @@ function App({ onLogout, userEmail }) {
     const lastDayTx = lastDate ? transacoes.filter(t=>t.data===lastDate).sort((a,b)=>String(a.id).padStart(36,'0').localeCompare(String(b.id).padStart(36,'0'))) : [];
     // Saldo acumulado até o último dia (não apenas o delta do dia)
     const lastDaySaldo = chartData.length ? chartData[chartData.length - 1].saldo : 0;
-    // Mês atual
-    const mes = new Date().toISOString().slice(0,7);
-    const mesEntradas = transacoes.filter(t=>t.tipo==="entrada"&&t.data.startsWith(mes)).reduce((s,t)=>s+t.valor,0);
-    const mesSaidas   = transacoes.filter(t=>t.tipo==="saida"  &&t.data.startsWith(mes)).reduce((s,t)=>s+t.valor,0);
-    return { lastDate, lastDayTx, lastDaySaldo, chartData: chartData.slice(-30), mesEntradas, mesSaidas };
-  }, [transacoes]);
+    // Cofre
+    const operadoresSet = new Set(entidades.filter(e=>e.roles.includes("operador")).map(e=>e.nome));
+    const repassesDia = lastDate
+      ? transacoes.filter(t => t.data===lastDate && t.descricao==="Repasse" && t.destino==="Lotérica")
+      : [];
+    const repassesOp    = repassesDia.filter(t =>  operadoresSet.has(t.origem)).reduce((s,t)=>s+t.valor,0);
+    const repassesNaoOp = repassesDia.filter(t => !operadoresSet.has(t.origem)).reduce((s,t)=>s+t.valor,0);
+    const cofre = (repassesOp - lastDaySaldo) + repassesNaoOp;
+    return { lastDate, lastDayTx, lastDaySaldo, cofre, chartData: chartData.slice(-30) };
+  }, [transacoes, entidades]);
 
   // ══════════════════════════════════════════════════════════════════════════
   //  RENDER
@@ -561,25 +565,19 @@ function App({ onLogout, userEmail }) {
 
         {/* ══ DASHBOARD ══ */}
         {tab==="dashboard" && (() => {
-          const { lastDate, lastDayTx, lastDaySaldo, mesEntradas, mesSaidas } = dashboardData;
+          const { lastDate, lastDayTx, lastDaySaldo, cofre } = dashboardData;
           return (
             <>
               {/* KPIs */}
-              <div className="kpi-grid" style={{marginBottom:"1.25rem"}}>
+              <div className="kpi-grid" style={{marginBottom:"1.25rem",gridTemplateColumns:"repeat(2,minmax(0,1fr))"}}>
                 <div className="kpi-card" style={{"--accent-color":lastDaySaldo>=0?"var(--accent)":"var(--danger)"}}>
                   <div className="kpi-label">Saldo do Dia</div>
                   <div className="kpi-value" style={{color:lastDaySaldo>=0?"var(--accent)":"var(--danger)"}}>{formatCurrency(lastDaySaldo)}</div>
                   <div className="kpi-sub">{lastDaySaldo>=0?"✓ Positivo":"✗ Negativo"}</div>
                 </div>
-                <div className="kpi-card" style={{"--accent-color":"var(--success)"}}>
-                  <div className="kpi-label">Entradas no mês</div>
-                  <div className="kpi-value" style={{color:"var(--success)"}}>{formatCurrency(mesEntradas)}</div>
-                  <div className="kpi-sub">{new Date().toLocaleDateString("pt-BR",{month:"long",year:"numeric"})}</div>
-                </div>
-                <div className="kpi-card" style={{"--accent-color":"var(--danger)"}}>
-                  <div className="kpi-label">Saídas no mês</div>
-                  <div className="kpi-value" style={{color:"var(--danger)"}}>{formatCurrency(mesSaidas)}</div>
-                  <div className="kpi-sub">Saldo do mês: {formatCurrency(mesEntradas-mesSaidas)}</div>
+                <div className="kpi-card" style={{"--accent-color":"var(--warning)"}}>
+                  <div className="kpi-label">Cofre</div>
+                  <div className="kpi-value" style={{color:"var(--warning)"}}>{formatCurrency(cofre)}</div>
                 </div>
               </div>
 
