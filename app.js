@@ -189,7 +189,7 @@ function App({ onLogout, userEmail }) {
   const [transacoes, setTransacoes] = useState([]);
   const [filterTipo, setFilterTipo] = useState("todos");
   const [filterData, setFilterData] = useState("");
-  const [form, setForm] = useState({ descricao:"", descricao_livre:"", origem:"", destino:"", valor:"", data:today(), fluxoManual:null });
+  const [form, setForm] = useState({ descricao:"", descricao_livre:"", origem:"", destino:"", valor:"", data:today() });
 
   // ── [F16] Paginação do histórico ──────────────────────────────────────────
   const PAGE_SIZE = 50;
@@ -369,23 +369,16 @@ function App({ onLogout, userEmail }) {
   const totalRecebido   = useMemo(() => emprestimos.reduce((s,e)=>s+(recPorEmpMap[e.id]??0),0), [emprestimos, recPorEmpMap]);
 
   // ── Regras de negócio ─────────────────────────────────────────────────────
-  // repasseEntreOperadores: true quando Repasse e nenhum dos lados é Lotérica
-  const repasseEntreOperadores = (descricao, origem, destino) =>
-    descricao==="Repasse" && origem && destino && origem!=="Lotérica" && destino!=="Lotérica";
-
-  const computeFluxo = (descricao, origem, destino, fluxoManual) => {
-    if (descricao==="Repasse" || descricao==="Recolhimento") {
-      // Se ambos os lados são operadores, respeita escolha manual
-      if (repasseEntreOperadores(descricao, origem, destino)) return fluxoManual || "entrada";
+  const computeFluxo = (descricao, origem) => {
+    if (descricao==="Repasse" || descricao==="Recolhimento")
       return origem==="Lotérica" ? "saida" : "entrada";
-    }
     return tipoFluxo[descricao] || "entrada";
   };
 
   // [F5] IDs agora são UUIDs via genId()
   const handleAdd = () => {
     if (!form.descricao || !parseInput(form.valor) || !form.data) return;
-    const tipoFinal = computeFluxo(form.descricao, form.origem, form.destino, form.fluxoManual);
+    const tipoFinal = computeFluxo(form.descricao, form.origem);
     const destinoFinal =
       form.descricao==="Suprimento" ? "Lotérica"
       : form.descricao==="Recolhimento" && form.origem==="Lotérica" ? "Banco"
@@ -400,7 +393,7 @@ function App({ onLogout, userEmail }) {
       savePatch({ transacoes: next });
       return next;
     });
-    setForm(f => ({ ...f, descricao:"", descricao_livre:"", origem:"", destino:"", valor:"", data:today(), fluxoManual:null })); // [N6] reseta data também
+    setForm(f => ({ ...f, descricao:"", descricao_livre:"", origem:"", destino:"", valor:"", data:today() })); // [N6] reseta data também
   };
 
   // ── Guard: redireciona tab inválida para viewer ───────────────────────────
@@ -631,7 +624,7 @@ function App({ onLogout, userEmail }) {
                     {tiposList.map(o=><option key={o}>{o}</option>)}
                   </select>
                   {form.descricao && (() => {
-                    const fluxo = computeFluxo(form.descricao, form.origem, form.destino, form.fluxoManual);
+                    const fluxo = computeFluxo(form.descricao, form.origem);
                     return <span style={{fontSize:".68rem",fontFamily:"var(--font-mono)",marginTop:".3rem",color:fluxo==="saida"?"var(--danger)":"var(--success)"}}>{fluxo==="saida"?"↓ Saída":"↑ Entrada"}</span>;
                   })()}
                 </div>
@@ -679,28 +672,6 @@ function App({ onLogout, userEmail }) {
                       </select>
                   }
                 </div>
-                {/* Toggle entrada/saída — aparece somente em Repasse entre operadores */}
-                {repasseEntreOperadores(form.descricao, form.origem, form.destino) && (
-                  <div className="form-group">
-                    <label className="form-label">Fluxo</label>
-                    <div style={{display:"flex",gap:".5rem"}}>
-                      {[["entrada","↑ Entrada","var(--success)","var(--success-dim)"],["saida","↓ Saída","var(--danger)","var(--danger-dim)"]].map(([val,label,color,dim])=>(
-                        <button key={val} type="button"
-                          onClick={()=>setForm(f=>({...f,fluxoManual:val}))}
-                          style={{
-                            flex:1,padding:".45rem .5rem",borderRadius:"var(--radius)",border:`1.5px solid`,
-                            borderColor:(form.fluxoManual||"entrada")===val?color:"var(--border-strong)",
-                            background:(form.fluxoManual||"entrada")===val?dim:"var(--surface)",
-                            color:(form.fluxoManual||"entrada")===val?color:"var(--text-secondary)",
-                            fontFamily:"var(--font-mono)",fontSize:".75rem",fontWeight:600,cursor:"pointer",
-                            transition:"all .15s",
-                          }}>
-                          {label}
-                        </button>
-                      ))}
-                    </div>
-                  </div>
-                )}
                 <div className="form-group">
                   <label className="form-label">Valor (R$)</label>
                   <input className="form-input" type="text" placeholder="R$ 0,00" value={form.valor} onChange={e=>setForm(f=>({...f,valor:formatInput(e.target.value)}))}/>
