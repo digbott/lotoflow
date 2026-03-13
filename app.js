@@ -176,6 +176,7 @@ function App({ onLogout, userEmail }) {
     ["lancamentos","➕","Lançar",   "Lançamentos"],
     ["historico",  "📋","Histórico","Histórico"],
     ["debitos",    "💳","Contas",   "Pagar/Receber"],
+    ["cofre",      "🏦","Cofre",    "Cofre"],
     ["cadastros",  "⚙️","Config",  "Cadastro"],
   ];
   const TABS = isViewer
