@@ -235,11 +235,13 @@ function App({ onLogout, userEmail }) {
     const items = [];
     transacoes.forEach(t => {
       const isOp = entidades.find(e => e.nome === t.origem)?.roles.includes("operador");
+      // Recolhimento de Operador → entrada no Cofre (operador trouxe o dinheiro)
       if (t.descricao === "Recolhimento" && isOp) {
         items.push({ id: t.id, tipo:"entrada", valor:t.valor, data:t.data, descricao:`Recolhimento · ${t.origem}`, origem:"auto" });
       }
+      // Suprimento de não-Operador → entrada no Cofre (dinheiro chegou de fora)
       if (t.descricao === "Suprimento" && !isOp) {
-        items.push({ id: t.id, tipo:"saida", valor:t.valor, data:t.data, descricao:`Suprimento · ${t.origem||"—"}`, origem:"auto" });
+        items.push({ id: t.id, tipo:"entrada", valor:t.valor, data:t.data, descricao:`Suprimento · ${t.origem||"—"}`, origem:"auto" });
       }
     });
     return items;
