@@ -13,8 +13,8 @@ const VIEWER_EMAILS = [
 ];
 
 // ── Constantes globais ──────────────────────────────────────────────────────
-const DEFAULT_TIPO_FLUXO = { Repasse:"saida", Recolhimento:"saida", Suprimento:"entrada", Vale:"entrada" };
-const DEFAULT_TIPOS      = ["Repasse","Recolhimento","Suprimento","Vale"];
+const DEFAULT_TIPO_FLUXO = { Repasse:"saida", Recolhimento:"saida", Suprimento:"entrada", Vale:"entrada", "Recolheu para":"entrada", "Forneceu recurso para":"entrada" };
+const DEFAULT_TIPOS      = ["Repasse","Recolhimento","Suprimento","Vale","Recolheu para","Forneceu recurso para"];
 const FORMAS_PAG         = ["Pix","Boleto","Dinheiro"];
 // [F12] CURRENT_YEAR removido daqui — calculado inline nos componentes
 
@@ -234,14 +234,17 @@ function App({ onLogout, userEmail }) {
   const cofreAutoItems = useMemo(() => {
     const items = [];
     transacoes.forEach(t => {
-      const isOp = entidades.find(e => e.nome === t.origem)?.roles.includes("operador");
-      // Recolhimento de Operador → entrada no Cofre (operador trouxe o dinheiro)
-      if (t.descricao === "Recolhimento" && isOp) {
-        items.push({ id: t.id, tipo:"entrada", valor:t.valor, data:t.data, descricao:`Recolhimento · ${t.origem}`, origem:"auto" });
+      const entOrigem  = entidades.find(e => e.nome === t.origem);
+      const isOp       = entOrigem?.roles.includes("operador");
+      const isParceiro = entOrigem?.roles.includes("parceiro");
+      const isEntidade = entOrigem?.roles.includes("entidade");
+      // "Recolheu para" de Operador → Entrada no Cofre
+      if (t.descricao === "Recolheu para" && isOp) {
+        items.push({ id: t.id, tipo:"entrada", valor:t.valor, data:t.data, descricao:`Recolheu para · ${t.origem}`, origem:"auto" });
       }
-      // Suprimento de não-Operador → entrada no Cofre (dinheiro chegou de fora)
-      if (t.descricao === "Suprimento" && !isOp) {
-        items.push({ id: t.id, tipo:"entrada", valor:t.valor, data:t.data, descricao:`Suprimento · ${t.origem||"—"}`, origem:"auto" });
+      // "Forneceu recurso para" de Parceiro ou Entidade → Entrada no Cofre
+      if (t.descricao === "Forneceu recurso para" && (isParceiro || isEntidade)) {
+        items.push({ id: t.id, tipo:"entrada", valor:t.valor, data:t.data, descricao:`Forneceu recurso para · ${t.origem||"—"}`, origem:"auto" });
       }
     });
     return items;
