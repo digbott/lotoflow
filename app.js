@@ -1196,6 +1196,95 @@ function App({ onLogout, userEmail }) {
           );
         })()}
 
+        {/* ══ COFRE ══ */}
+        {tab==="cofre" && !isViewer && (
+          <>
+            <div className="kpi-grid" style={{gridTemplateColumns:"repeat(3,minmax(0,1fr))",marginBottom:"1.25rem"}}>
+              <div className="kpi-card" style={{"--accent-color":"var(--warning)"}}>
+                <div className="kpi-label">Saldo do Cofre</div>
+                <div className="kpi-value" style={{color:"var(--warning)"}}>{formatCurrency(cofreSaldo)}</div>
+              </div>
+              <div className="kpi-card" style={{"--accent-color":"var(--success)"}}>
+                <div className="kpi-label">Total Entradas</div>
+                <div className="kpi-value" style={{color:"var(--success)"}}>{formatCurrency(cofreTotalEntradas)}</div>
+              </div>
+              <div className="kpi-card" style={{"--accent-color":"var(--danger)"}}>
+                <div className="kpi-label">Total Saídas</div>
+                <div className="kpi-value" style={{color:"var(--danger)"}}>{formatCurrency(cofreTotalSaidas)}</div>
+              </div>
+            </div>
+
+            <div className="section-title">Novo Lançamento Manual</div>
+            <div className="form-card">
+              <div className="form-grid">
+                <div className="form-group">
+                  <label className="form-label">Tipo</label>
+                  <select className="form-select" value={cofreForm.tipo} onChange={e=>setCofreForm(f=>({...f,tipo:e.target.value}))}>
+                    <option value="entrada">↑ Entrada</option>
+                    <option value="saida">↓ Saída</option>
+                  </select>
+                </div>
+                <div className="form-group">
+                  <label className="form-label">Valor (R$)</label>
+                  <input className="form-input" type="text" placeholder="R$ 0,00" value={cofreForm.valor} onChange={e=>setCofreForm(f=>({...f,valor:formatInput(e.target.value)}))}/>
+                </div>
+                <div className="form-group">
+                  <label className="form-label">Data</label>
+                  <input className="form-input" type="date" value={cofreForm.data} onChange={e=>setCofreForm(f=>({...f,data:e.target.value}))}/>
+                </div>
+                <div className="form-group">
+                  <label className="form-label">Descrição <span style={{fontWeight:400,color:"var(--text-tertiary)"}}>(opcional)</span></label>
+                  <input className="form-input" type="text" placeholder="Motivo..." value={cofreForm.descricao} onChange={e=>setCofreForm(f=>({...f,descricao:e.target.value}))}/>
+                </div>
+                <div className="form-group">
+                  <label className="form-label">&nbsp;</label>
+                  <button className="btn btn-accent" onClick={()=>{
+                    if (!parseInput(cofreForm.valor) || !cofreForm.data) return;
+                    const novo = { id:genId(), tipo:cofreForm.tipo, valor:parseInput(cofreForm.valor), data:cofreForm.data, descricao:cofreForm.descricao, origem:"manual" };
+                    setCofreManual(prev=>{ const next=[...prev,novo]; savePatch({cofreManual:next}); return next; });
+                    setCofreForm({tipo:"entrada",valor:"",data:today(),descricao:""});
+                  }}>+ Registrar</button>
+                </div>
+              </div>
+            </div>
+
+            <div className="section-title">Histórico do Cofre</div>
+            <div className="table-card">
+              <div className="table-scroll">
+                <table>
+                  <thead><tr><th>Data</th><th>Tipo</th><th>Descrição</th><th>Origem</th><th>Valor</th><th></th></tr></thead>
+                  <tbody>
+                    {cofreHistorico.length===0
+                      ? <tr><td colSpan={6}><div className="empty">Nenhum lançamento no cofre.</div></td></tr>
+                      : cofreHistorico.map(c => (
+                        <tr key={c.id}>
+                          <td style={{fontFamily:"var(--font-mono)",fontSize:".78rem",color:"var(--text-tertiary)"}}>{formatDate(c.data)}</td>
+                          <td><span className={`badge badge-${c.tipo}`}>{c.tipo==="entrada"?"↑ Entrada":"↓ Saída"}</span></td>
+                          <td style={{fontSize:".82rem",color:"var(--text)"}}>{c.descricao||"—"}</td>
+                          <td>
+                            <span style={{fontSize:".7rem",fontFamily:"var(--font-mono)",padding:".15rem .45rem",borderRadius:4,
+                              background: c.origem==="manual"?"var(--accent-dim)":"var(--surface3)",
+                              color: c.origem==="manual"?"var(--accent)":"var(--text-tertiary)"}}>
+                              {c.origem==="manual"?"Manual":"Automático"}
+                            </span>
+                          </td>
+                          <td className={`val-${c.tipo}`}>{c.tipo==="entrada"?"+":"-"}{formatCurrency(c.valor)}</td>
+                          <td>
+                            {c.origem==="manual" && (
+                              <button className="btn btn-danger" style={{padding:".3rem .7rem",fontSize:".75rem"}}
+                                onClick={()=>deleteCofreManual(c.id)}>✕</button>
+                            )}
+                          </td>
+                        </tr>
+                      ))
+                    }
+                  </tbody>
+                </table>
+              </div>
+            </div>
+          </>
+        )}
+
         {/* ══ CADASTROS ══ (somente admin) */}
         {tab==="cadastros" && !isViewer && (
           <>
