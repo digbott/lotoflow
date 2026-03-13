@@ -226,6 +226,37 @@ function App({ onLogout, userEmail }) {
 
   const [debitosSubTab, setDebitosSubTab] = useState("debitosLoterica");
 
+  // ── Estado: Cofre ─────────────────────────────────────────────────────────
+  const [cofreManual, setCofreManual] = useState([]);
+  const [cofreForm,   setCofreForm]   = useState({ tipo:"entrada", valor:"", data:today(), descricao:"" });
+
+  // Derivados do Cofre
+  const cofreAutoItems = useMemo(() => {
+    const items = [];
+    transacoes.forEach(t => {
+      const isOp = entidades.find(e => e.nome === t.origem)?.roles.includes("operador");
+      if (t.descricao === "Recolhimento" && isOp) {
+        items.push({ id: t.id, tipo:"entrada", valor:t.valor, data:t.data, descricao:`Recolhimento · ${t.origem}`, origem:"auto" });
+      }
+      if (t.descricao === "Suprimento" && !isOp) {
+        items.push({ id: t.id, tipo:"saida", valor:t.valor, data:t.data, descricao:`Suprimento · ${t.origem||"—"}`, origem:"auto" });
+      }
+    });
+    return items;
+  }, [transacoes, entidades]);
+
+  const cofreHistorico = useMemo(() =>
+    [...cofreAutoItems, ...cofreManual].sort((a,b) => b.data.localeCompare(a.data)),
+  [cofreAutoItems, cofreManual]);
+
+  const cofreTotalEntradas = useMemo(() =>
+    cofreHistorico.filter(c=>c.tipo==="entrada").reduce((s,c)=>s+c.valor,0),
+  [cofreHistorico]);
+  const cofreTotalSaidas = useMemo(() =>
+    cofreHistorico.filter(c=>c.tipo==="saida").reduce((s,c)=>s+c.valor,0),
+  [cofreHistorico]);
+  const cofreSaldo = cofreTotalEntradas - cofreTotalSaidas;
+
   // ── [F14] Toast system ────────────────────────────────────────────────────
   const [toasts, setToasts] = useState([]);
   const addToast = useCallback((message, type="ok", action=null, duration=4500) => {
@@ -264,6 +295,7 @@ function App({ onLogout, userEmail }) {
           if (d.tiposList?.length)   setTiposList(d.tiposList);
           if (d.tipoFluxo)           setTipoFluxo(d.tipoFluxo);
           if (d.entidades?.length)   setEntidades(d.entidades);
+          if (d.cofreManual?.length) setCofreManual(d.cofreManual);
         }
         setSyncStatus("ok");
       })
@@ -472,6 +504,18 @@ function App({ onLogout, userEmail }) {
       return next;
     });
     addToast("Recebimento removido.", "ok");
+  }, [confirm, savePatch, addToast]);
+
+  const deleteCofreManual = useCallback(async (id) => {
+    const ok = await confirm({
+      title: "Remover lançamento do Cofre?",
+      message: "Este lançamento manual será removido permanentemente.",
+      confirmLabel: "Remover",
+      icon: "🏦",
+    });
+    if (!ok) return;
+    setCofreManual(prev => { const next=prev.filter(x=>x.id!==id); savePatch({cofreManual:next}); return next; });
+    addToast("Lançamento removido.", "ok");
   }, [confirm, savePatch, addToast]);
 
   // ── [F8] Dados do dashboard ───────────────────────────────────────────────
