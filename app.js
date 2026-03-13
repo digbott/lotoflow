@@ -1428,9 +1428,32 @@ function Boot() {
   };
 
   if (!ready || authLoading) return (
-    <div style={{display:"flex",alignItems:"center",justifyContent:"center",height:"100vh",fontFamily:"'Plus Jakarta Sans',sans-serif",color:"#6b7280",gap:12}}>
-      <span style={{fontSize:"1.5rem"}}>🎰</span>
-      <span>Conectando...</span>
+    <div style={{display:"flex",flexDirection:"column",alignItems:"center",justifyContent:"center",height:"100vh",background:"#f3f4f6",fontFamily:"'Plus Jakarta Sans',sans-serif",gap:"1.25rem"}}>
+      <style>{`
+        @keyframes lf-pulse {
+          0%,100% { transform: scale(1);   opacity: 1; }
+          50%      { transform: scale(1.1); opacity: .85; }
+        }
+        @keyframes lf-dot {
+          0%,80%,100% { opacity: 0; } 40% { opacity: 1; }
+        }
+        .lf-logo-wrap { animation: lf-pulse 1.6s ease-in-out infinite; }
+        .lf-d1 { animation: lf-dot 1.2s infinite 0s; }
+        .lf-d2 { animation: lf-dot 1.2s infinite .2s; }
+        .lf-d3 { animation: lf-dot 1.2s infinite .4s; }
+      `}</style>
+      <div className="lf-logo-wrap">
+        <LogoSVG size={64}/>
+      </div>
+      <div style={{display:"flex",flexDirection:"column",alignItems:"center",gap:".3rem"}}>
+        <span style={{fontWeight:700,fontSize:"1.1rem",color:"#111827",letterSpacing:"-.3px"}}>LotoFlow</span>
+        <span style={{fontSize:".8rem",color:"#9ca3af",display:"flex",alignItems:"center",gap:2}}>
+          Conectando
+          <span className="lf-d1" style={{marginLeft:2}}>.</span>
+          <span className="lf-d2">.</span>
+          <span className="lf-d3">.</span>
+        </span>
+      </div>
     </div>
   );
 
