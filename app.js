@@ -59,7 +59,7 @@ const genId = () => {
 // ── [F13] DEFAULT_ENTIDADES sem nomes pessoais reais ────────────────────────
 // Dados reais vivem apenas no Firestore protegido por autenticação.
 const DEFAULT_ENTIDADES = [
-  { nome:"Lotérica", roles:["entidade"] },
+  { nome:"Lotérica", roles:["origem_destino"] },
   { nome:"Banco",    roles:["credor"] },
 ];
 
@@ -176,7 +176,7 @@ function App({ onLogout, userEmail }) {
     ["lancamentos","➕","Lançar",   "Lançamentos"],
     ["historico",  "📋","Histórico","Histórico"],
     ["debitos",    "💳","Contas",   "Pagar/Receber"],
-    ["cadastros",  "⚙️","Config",  "Cadastro"],
+    ["cadastros",  "⚙️","Config",  "Cadastros"],
   ];
   const TABS = isViewer
     ? ALL_TABS.filter(([k]) => ["dashboard","historico","debitos"].includes(k))
@@ -204,10 +204,10 @@ function App({ onLogout, userEmail }) {
   // ── Estado: Entidades ─────────────────────────────────────────────────────
   const [entidades,  setEntidades]  = useState(DEFAULT_ENTIDADES);
   const [cadEditEnt, setCadEditEnt] = useState({ idx:null, nome:"", roles:[] });
-  const [cadNewEnt,  setCadNewEnt]  = useState({ nome:"", roles:["entidade"] });
+  const [cadNewEnt,  setCadNewEnt]  = useState({ nome:"", roles:["origem_destino"] });
 
   // Listas derivadas
-  const pessoasList   = useMemo(() => entidades.filter(e=>e.roles.includes("entidade")).map(e=>e.nome), [entidades]);
+  const pessoasList   = useMemo(() => entidades.filter(e=>e.roles.includes("origem_destino")).map(e=>e.nome), [entidades]);
   const credoresList  = useMemo(() => entidades.filter(e=>e.roles.includes("credor")).map(e=>e.nome),         [entidades]);
   const devedoresList = useMemo(() => entidades.filter(e=>e.roles.includes("devedor")).map(e=>e.nome),        [entidades]);
 
@@ -667,8 +667,23 @@ function App({ onLogout, userEmail }) {
             <div className="section-title">Novo Lançamento</div>
             <div className="form-card">
               <div className="form-grid">
+                {/* Pessoa/Entidade — Origem */}
                 <div className="form-group">
-                  <label className="form-label">Tipo</label>
+                  <label className="form-label">Pessoa/Entidade</label>
+                  <select className="form-select" value={form.origem} onChange={e=>{
+                    const val = e.target.value;
+                    const nd = form.descricao==="Recolhimento" && val!=="Lotérica" ? "Lotérica"
+                      : form.descricao==="Recolhimento" && val==="Lotérica" ? "Banco"
+                      : form.destino===val ? "" : form.destino;
+                    setForm(f=>({...f,origem:val,destino:nd}));
+                  }}>
+                    <option value="">Selecione...</option>
+                    {pessoasList.filter(p=>p!==form.destino).map(p=><option key={p}>{p}</option>)}
+                  </select>
+                </div>
+                {/* Ação */}
+                <div className="form-group">
+                  <label className="form-label">Ação</label>
                   <select className="form-select" value={form.descricao} onChange={e=>setForm(f=>({...f,descricao:e.target.value,origem:"",destino:""}))}>
                     <option value="">Selecione...</option>
                     {tiposList.map(o=><option key={o}>{o}</option>)}
@@ -678,32 +693,10 @@ function App({ onLogout, userEmail }) {
                     return <span style={{fontSize:".68rem",fontFamily:"var(--font-mono)",marginTop:".3rem",color:fluxo==="saida"?"var(--danger)":"var(--success)"}}>{fluxo==="saida"?"↓ Saída":"↑ Entrada"}</span>;
                   })()}
                 </div>
+                {/* Pessoa/Entidade — Destino */}
                 <div className="form-group">
-                  <label className="form-label">Descrição livre</label>
-                  <input className="form-input" type="text" placeholder="Observação..." value={form.descricao_livre} onChange={e=>setForm(f=>({...f,descricao_livre:e.target.value}))}/>
-                </div>
-                <div className="form-group">
-                  <label className="form-label">Origem</label>
-                  {(form.descricao==="Suprimento" || form.descricao==="Vale")
-                    ? <select className="form-select" value={form.origem} onChange={e=>setForm(f=>({...f,origem:e.target.value}))}>
-                        <option value="">Selecione...</option>
-                        {credoresList.map(p=><option key={p}>{p}</option>)}
-                      </select>
-                    : <select className="form-select" value={form.origem} onChange={e=>{
-                        const val = e.target.value;
-                        const nd = form.descricao==="Recolhimento" && val!=="Lotérica" ? "Lotérica"
-                          : form.descricao==="Recolhimento" && val==="Lotérica" ? "Banco"
-                          : form.destino===val ? "" : form.destino;
-                        setForm(f=>({...f,origem:val,destino:nd}));
-                      }}>
-                        <option value="">Selecione...</option>
-                        {pessoasList.filter(p=>p!==form.destino).map(p=><option key={p}>{p}</option>)}
-                      </select>
-                  }
-                </div>
-                <div className="form-group">
-                  <label className="form-label">Destino</label>
-                  {(form.descricao==="Suprimento" || form.descricao==="Vale")
+                  <label className="form-label">Pessoa/Entidade</label>
+                  {form.descricao==="Suprimento" || form.descricao==="Vale"
                     ? <input className="form-input" value="Lotérica" readOnly style={{opacity:.5,cursor:"not-allowed"}}/>
                     : form.descricao==="Recolhimento" && form.origem==="Lotérica"
                     ? <input className="form-input" value="Banco" readOnly style={{opacity:.5,cursor:"not-allowed"}}/>
@@ -722,10 +715,12 @@ function App({ onLogout, userEmail }) {
                       </select>
                   }
                 </div>
+                {/* Valor */}
                 <div className="form-group">
                   <label className="form-label">Valor (R$)</label>
                   <input className="form-input" type="text" placeholder="R$ 0,00" value={form.valor} onChange={e=>setForm(f=>({...f,valor:formatInput(e.target.value)}))}/>
                 </div>
+                {/* Data */}
                 <div className="form-group">
                   <label className="form-label">Data</label>
                   <input className="form-input" type="date" value={form.data} onChange={e=>setForm(f=>({...f,data:e.target.value}))}/>
@@ -741,7 +736,7 @@ function App({ onLogout, userEmail }) {
             <div className="table-card">
               <div className="table-scroll">
                 <table>
-                  <thead><tr><th>Data</th><th>Tipo</th><th>Descrição</th><th>Origem</th><th>Destino</th><th>Valor</th><th></th></tr></thead>
+                  <thead><tr><th>Data</th><th>Ação</th><th>Descrição</th><th>De → Para</th><th>Valor</th><th></th></tr></thead>
                   <tbody>
                     {[...transacoes].sort((a,b)=>b.data.localeCompare(a.data)).map(t => (
                       <tr key={t.id}>
@@ -751,8 +746,7 @@ function App({ onLogout, userEmail }) {
                           {" "}<span style={{fontSize:".78rem",color:"var(--text-tertiary)"}}>{t.descricao}</span>
                         </td>
                         <td style={{color:"var(--text-tertiary)",fontSize:".82rem"}}>{t.descricao_livre||"—"}</td>
-                        <td style={{fontSize:".8rem"}}>{t.origem||"—"}</td>
-                        <td style={{fontSize:".8rem"}}>{t.destino||"—"}</td>
+                        <td style={{fontSize:".8rem",color:"var(--text-tertiary)"}}>{t.origem||"—"} → {t.destino||"—"}</td>
                         <td className={`val-${t.tipo}`}>{t.tipo==="entrada"?"+":"-"}{formatCurrency(t.valor)}</td>
                         <td>
                           {/* [F9] Exclusão com confirmação */}
@@ -1226,9 +1220,9 @@ function App({ onLogout, userEmail }) {
         {/* ══ CADASTROS ══ (somente admin) */}
         {tab==="cadastros" && !isViewer && (
           <>
-            <div className="section-title">Ações de Lançamento</div>
+            <div className="section-title">Tipos de Lançamento</div>
             <div className="table-card" style={{marginBottom:"1.5rem"}}>
-              <div className="table-header"><span className="table-header-title">Ações Cadastradas</span></div>
+              <div className="table-header"><span className="table-header-title">Tipos cadastrados</span></div>
               <div className="table-scroll">
                 <table>
                   <thead><tr><th>Nome</th><th>Fluxo padrão</th><th></th></tr></thead>
@@ -1291,7 +1285,7 @@ function App({ onLogout, userEmail }) {
 
             <div className="section-title">Pessoas e Entidades</div>
             <p style={{fontSize:".78rem",color:"var(--text-tertiary)",marginBottom:"1rem",fontFamily:"var(--font-mono)"}}>
-              Cada entidade pode ter um ou mais papéis: Entidade, Parceiro, Operador, Credor e/ou Devedor.
+              Cada entidade pode ter um ou mais papéis: Origem/Destino, Credor, Devedor e/ou Operador.
             </p>
             <div className="table-card" style={{marginBottom:"2rem"}}>
               <div className="table-scroll">
@@ -1299,8 +1293,8 @@ function App({ onLogout, userEmail }) {
                   <thead><tr><th>Nome</th><th>Funções</th><th></th></tr></thead>
                   <tbody>
                     {entidades.map((e,idx) => {
-                      const ROLE_LABELS = { entidade:"Entidade", parceiro:"Parceiro", operador:"Operador", credor:"Credor", devedor:"Devedor" };
-                      const ALL_ROLES   = ["entidade","parceiro","operador","credor","devedor"];
+                      const ROLE_LABELS = { origem_destino:"Origem/Destino", credor:"Credor", devedor:"Devedor", operador:"Operador" };
+                      const ALL_ROLES   = ["origem_destino","credor","devedor","operador"];
                       const isEditing   = cadEditEnt.idx===idx;
                       return (
                         <tr key={e.nome}>
@@ -1358,7 +1352,7 @@ function App({ onLogout, userEmail }) {
               <div style={{padding:"1rem 1.25rem",borderTop:"1px solid var(--border)",display:"flex",gap:".75rem",alignItems:"center",flexWrap:"wrap"}}>
                 <input className="form-input" style={{maxWidth:180}} placeholder="Nome..." value={cadNewEnt.nome} onChange={e=>setCadNewEnt(s=>({...s,nome:e.target.value}))}/>
                 <div style={{display:"flex",gap:".75rem",flexWrap:"wrap"}}>
-                  {[["entidade","Entidade"],["parceiro","Parceiro"],["operador","Operador"],["credor","Credor"],["devedor","Devedor"]].map(([r,l])=>(
+                  {[["origem_destino","Origem/Destino"],["credor","Credor"],["devedor","Devedor"],["operador","Operador"]].map(([r,l])=>(
                     <label key={r} style={{display:"flex",alignItems:"center",gap:".3rem",fontSize:".78rem",color:"var(--text-secondary)",cursor:"pointer"}}>
                       <input type="checkbox" checked={cadNewEnt.roles.includes(r)}
                         onChange={ev=>setCadNewEnt(s=>({...s,roles:ev.target.checked?[...s.roles,r]:s.roles.filter(x=>x!==r)}))}/>
@@ -1370,7 +1364,7 @@ function App({ onLogout, userEmail }) {
                   const nome = cadNewEnt.nome.trim();
                   if (!nome || cadNewEnt.roles.length===0 || entidades.find(e=>e.nome===nome)) return;
                   setEntidades(prev=>{const next=[...prev,{nome,roles:cadNewEnt.roles}];savePatch({entidades:next});return next;});
-                  setCadNewEnt({nome:"",roles:["entidade"]});
+                  setCadNewEnt({nome:"",roles:["origem_destino"]});
                 }}>+ Adicionar</button>
               </div>
             </div>
