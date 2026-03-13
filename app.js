@@ -585,7 +585,7 @@ function App({ onLogout, userEmail }) {
                   <div className="table-card">
                     <div className="table-scroll">
                       <table>
-                        <thead><tr><th>Ação</th><th>Descrição</th><th>De → Para</th><th>Valor</th></tr></thead>
+                        <thead><tr><th>Tipo</th><th>Descrição</th><th>Origem → Destino</th><th>Valor</th></tr></thead>
                         <tbody>
                           {lastDayTx.map(t => (
                             <tr key={t.id}>
