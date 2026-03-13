@@ -207,7 +207,7 @@ function App({ onLogout, userEmail }) {
   const [cadNewEnt,  setCadNewEnt]  = useState({ nome:"", roles:["entidade"] });
 
   // Listas derivadas
-  const pessoasList   = useMemo(() => entidades.filter(e=>e.roles.includes("entidade")).map(e=>e.nome), [entidades]);
+  const pessoasList   = useMemo(() => entidades.filter(e=>e.roles.some(r=>["entidade","operador","parceiro"].includes(r))).map(e=>e.nome), [entidades]);
   const credoresList  = useMemo(() => entidades.filter(e=>e.roles.includes("credor")).map(e=>e.nome),         [entidades]);
   const devedoresList = useMemo(() => entidades.filter(e=>e.roles.includes("devedor")).map(e=>e.nome),        [entidades]);
 
@@ -700,7 +700,7 @@ function App({ onLogout, userEmail }) {
             <div className="table-card">
               <div className="table-scroll">
                 <table>
-                  <thead><tr><th>Data</th><th>Ação</th><th>Descrição</th><th>Valor</th><th></th></tr></thead>
+                  <thead><tr><th>Data</th><th>Ação</th><th>Descrição</th><th>Observação</th><th>Valor</th><th></th></tr></thead>
                   <tbody>
                     {[...transacoes].sort((a,b)=>b.data.localeCompare(a.data)).map(t => {
                       const partes = [t.origem, t.descricao, t.destino].filter(Boolean);
@@ -711,10 +711,8 @@ function App({ onLogout, userEmail }) {
                         <td>
                           <span className={`badge badge-${t.tipo}`}>{t.tipo==="entrada"?"↑ Entrada":"↓ Saída"}</span>
                         </td>
-                        <td style={{fontSize:".82rem"}}>
-                          <span style={{color:"var(--text)"}}>{descricaoComposta}</span>
-                          {t.observacao && <span style={{display:"block",fontSize:".75rem",color:"var(--text-tertiary)",marginTop:".1rem"}}>{t.observacao}</span>}
-                        </td>
+                        <td style={{fontSize:".82rem",color:"var(--text)"}}>{descricaoComposta}</td>
+                        <td style={{fontSize:".78rem",color:"var(--text-tertiary)"}}>{t.observacao||"—"}</td>
                         <td className={`val-${t.tipo}`}>{t.tipo==="entrada"?"+":"-"}{formatCurrency(t.valor)}</td>
                         <td>
                           {/* [F9] Exclusão com confirmação */}
