@@ -378,13 +378,18 @@ function App({ onLogout, userEmail }) {
   // [F5] IDs agora são UUIDs via genId()
   const handleAdd = () => {
     if (!form.descricao || !parseInput(form.valor) || !form.data) return;
+    // Para Suprimento a origem é obrigatória (quem enviou o dinheiro)
+    if (form.descricao==="Suprimento" && !form.origem) return;
     const tipoFinal = computeFluxo(form.descricao, form.origem);
     const destinoFinal =
       form.descricao==="Suprimento" ? "Lotérica"
       : form.descricao==="Recolhimento" && form.origem==="Lotérica" ? "Banco"
       : form.descricao==="Recolhimento" && form.origem!=="Lotérica" ? "Lotérica"
       : form.destino;
-    const novaT = { ...form, tipo:tipoFinal, destino:destinoFinal,
+    const origemFinal =
+      form.descricao==="Vale" ? "Lotérica"
+      : form.origem;
+    const novaT = { ...form, tipo:tipoFinal, origem:origemFinal, destino:destinoFinal,
       id: genId(),
       valor: parseInput(form.valor), // centavos
     };
