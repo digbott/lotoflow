@@ -13,8 +13,8 @@ const VIEWER_EMAILS = [
 ];
 
 // ── Constantes globais ──────────────────────────────────────────────────────
-const DEFAULT_TIPO_FLUXO = { Repasse:"saida", Recolhimento:"saida", Suprimento:"entrada", Vale:"entrada", "Recolheu para":"entrada", "Forneceu recurso para":"entrada" };
-const DEFAULT_TIPOS      = ["Repasse","Recolhimento","Suprimento","Vale","Recolheu para","Forneceu recurso para"];
+const DEFAULT_TIPO_FLUXO = { Repasse:"saida", Recolhimento:"saida", Suprimento:"entrada", Vale:"entrada", "Recolheu para":"entrada", "Forneceu recurso para":"entrada", "Recebeu de":"saida" };
+const DEFAULT_TIPOS      = ["Repasse","Recolhimento","Suprimento","Vale","Recolheu para","Forneceu recurso para","Recebeu de"];
 const FORMAS_PAG         = ["Pix","Boleto","Dinheiro"];
 // [F12] CURRENT_YEAR removido daqui — calculado inline nos componentes
 
@@ -190,7 +190,7 @@ function App({ onLogout, userEmail }) {
   const [transacoes, setTransacoes] = useState([]);
   const [filterTipo, setFilterTipo] = useState("todos");
   const [filterData, setFilterData] = useState("");
-  const [form, setForm] = useState({ descricao:"", descricao_livre:"", origem:"", destino:"", valor:"", data:today(), observacao:"" });
+  const [form, setForm] = useState({ descricao:"", descricao_livre:"", origem:"", destino:"", valor:"", data:today(), observacao:"", registrarCofre:false });
 
   // ── [F16] Paginação do histórico ──────────────────────────────────────────
   const PAGE_SIZE = 50;
@@ -436,7 +436,12 @@ function App({ onLogout, userEmail }) {
       savePatch({ transacoes: next });
       return next;
     });
-    setForm(f => ({ ...f, descricao:"", descricao_livre:"", origem:"", destino:"", valor:"", data:today(), observacao:"" }));
+    // Se "Recebeu de" com Operador + origem Lotérica e checkbox marcado → saída no Cofre
+    if (form.registrarCofre) {
+      const novoCofre = { id: genId(), tipo:"saida", valor: parseInput(form.valor), data: form.data, descricao:`${origemFinal||"—"} · Recebeu de · ${destinoFinal||"—"}`, origem:"auto" };
+      setCofreManual(prev => { const next = [...prev, novoCofre]; savePatch({ cofreManual: next }); return next; });
+    }
+    setForm(f => ({ ...f, descricao:"", descricao_livre:"", origem:"", destino:"", valor:"", data:today(), observacao:"", registrarCofre:false }));
   };
 
   // ── Guard: redireciona tab inválida para viewer ───────────────────────────
@@ -729,6 +734,25 @@ function App({ onLogout, userEmail }) {
                   <label className="form-label">Observação <span style={{fontWeight:400,color:"var(--text-tertiary)"}}>(opcional)</span></label>
                   <input className="form-input" type="text" placeholder="Detalhe adicional..." value={form.observacao||""} onChange={e=>setForm(f=>({...f,observacao:e.target.value}))}/>
                 </div>
+                {(() => {
+                  const entOrigem = entidades.find(e => e.nome === form.origem);
+                  const isOp = entOrigem?.roles.includes("operador");
+                  const showCofre = form.descricao === "Recebeu de" && isOp && form.destino === "Lotérica";
+                  if (!showCofre) return null;
+                  return (
+                    <div className="form-group" style={{gridColumn:"span 2"}}>
+                      <label style={{display:"flex",alignItems:"center",gap:".6rem",cursor:"pointer",
+                        border:"0.5px solid var(--accent)",borderRadius:"var(--radius)",
+                        padding:".5rem .8rem",background:"var(--accent-dim)"}}>
+                        <input type="checkbox" checked={form.registrarCofre||false}
+                          onChange={e=>setForm(f=>({...f,registrarCofre:e.target.checked}))}
+                          style={{width:15,height:15,cursor:"pointer",accentColor:"var(--accent)"}}/>
+                        <span style={{fontSize:".82rem",fontWeight:600,color:"var(--accent)"}}>Registrar no Cofre</span>
+                        <span style={{fontSize:".72rem",fontFamily:"var(--font-mono)",color:"var(--danger)",marginLeft:"auto"}}>↓ Saída</span>
+                      </label>
+                    </div>
+                  );
+                })()}
                 <div className="form-group">
                   <label className="form-label">&nbsp;</label>
                   <button className="btn btn-accent" onClick={handleAdd}>+ Registrar</button>
