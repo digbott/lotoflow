@@ -13,9 +13,11 @@ const VIEWER_EMAILS = [
 ];
 
 // ── Constantes globais ──────────────────────────────────────────────────────
-const DEFAULT_TIPO_FLUXO = { Repasse:"saida", Recolhimento:"saida", Suprimento:"entrada", Vale:"entrada", "Recolheu para":"entrada", "Forneceu recurso para":"entrada", "Recebeu de":"saida" };
-const DEFAULT_TIPOS      = ["Repasse","Recolhimento","Suprimento","Vale","Recolheu para","Forneceu recurso para","Recebeu de"];
+const DEFAULT_TIPO_FLUXO = { Repasse:"saida", Recolhimento:"saida", Suprimento:"entrada", Vale:"entrada", "Recolheu para":"entrada", "Forneceu recurso para":"entrada" };
+const DEFAULT_TIPOS      = ["Repasse","Recolhimento","Suprimento","Vale","Recolheu para","Forneceu recurso para"];
 const FORMAS_PAG         = ["Pix","Boleto","Dinheiro"];
+// [F17] Auto-logout por inatividade — 5 minutos (em ms)
+const IDLE_TIMEOUT_MS    = 5 * 60 * 1000;
 // [F12] CURRENT_YEAR removido daqui — calculado inline nos componentes
 
 // ── [F15] Helpers de moeda — armazenamento em centavos inteiros ─────────────
@@ -163,6 +165,30 @@ function SyncIndicator({ status, onRetry }) {
   );
 }
 
+// ── [F17] Hook de auto-logout por inatividade ────────────────────────────────
+// Monitora eventos de interação do usuário e dispara onLogout após IDLE_TIMEOUT_MS
+// sem nenhuma atividade. Ativo apenas quando o usuário está autenticado.
+function useIdleLogout(onLogout) {
+  const timerRef = useRef(null);
+
+  const reset = useCallback(() => {
+    if (timerRef.current) clearTimeout(timerRef.current);
+    timerRef.current = setTimeout(() => {
+      onLogout();
+    }, IDLE_TIMEOUT_MS);
+  }, [onLogout]);
+
+  useEffect(() => {
+    const EVENTS = ["mousedown","mousemove","keydown","touchstart","touchmove","scroll","wheel","click"];
+    EVENTS.forEach(ev => window.addEventListener(ev, reset, { passive: true }));
+    reset(); // inicia o timer na montagem
+    return () => {
+      EVENTS.forEach(ev => window.removeEventListener(ev, reset));
+      if (timerRef.current) clearTimeout(timerRef.current);
+    };
+  }, [reset]);
+}
+
 // ═══════════════════════════════════════════════════════════════════════════════
 //  Componente principal App
 // ═══════════════════════════════════════════════════════════════════════════════
@@ -170,6 +196,9 @@ function App({ onLogout, userEmail }) {
 
   // [F2] Verificação de visualizador (UX apenas — autorização real está no Firestore)
   const isViewer = VIEWER_EMAILS.includes((userEmail || "").toLowerCase());
+
+  // [F17] Auto-logout por inatividade
+  useIdleLogout(onLogout);
 
   const ALL_TABS = [
     ["dashboard",  "📊","Início",   "Dashboard"],
@@ -190,7 +219,7 @@ function App({ onLogout, userEmail }) {
   const [transacoes, setTransacoes] = useState([]);
   const [filterTipo, setFilterTipo] = useState("todos");
   const [filterData, setFilterData] = useState("");
-  const [form, setForm] = useState({ descricao:"", descricao_livre:"", origem:"", destino:"", valor:"", data:today(), observacao:"", registrarCofre:false });
+  const [form, setForm] = useState({ descricao:"", descricao_livre:"", origem:"", destino:"", valor:"", data:today(), observacao:"" });
 
   // ── [F16] Paginação do histórico ──────────────────────────────────────────
   const PAGE_SIZE = 50;
@@ -436,12 +465,7 @@ function App({ onLogout, userEmail }) {
       savePatch({ transacoes: next });
       return next;
     });
-    // Se "Recebeu de" com Operador + origem Lotérica e checkbox marcado → saída no Cofre
-    if (form.registrarCofre) {
-      const novoCofre = { id: genId(), tipo:"saida", valor: parseInput(form.valor), data: form.data, descricao:`${origemFinal||"—"} · Recebeu de · ${destinoFinal||"—"}`, origem:"auto" };
-      setCofreManual(prev => { const next = [...prev, novoCofre]; savePatch({ cofreManual: next }); return next; });
-    }
-    setForm(f => ({ ...f, descricao:"", descricao_livre:"", origem:"", destino:"", valor:"", data:today(), observacao:"", registrarCofre:false }));
+    setForm(f => ({ ...f, descricao:"", descricao_livre:"", origem:"", destino:"", valor:"", data:today(), observacao:"" }));
   };
 
   // ── Guard: redireciona tab inválida para viewer ───────────────────────────
@@ -734,25 +758,6 @@ function App({ onLogout, userEmail }) {
                   <label className="form-label">Observação <span style={{fontWeight:400,color:"var(--text-tertiary)"}}>(opcional)</span></label>
                   <input className="form-input" type="text" placeholder="Detalhe adicional..." value={form.observacao||""} onChange={e=>setForm(f=>({...f,observacao:e.target.value}))}/>
                 </div>
-                {(() => {
-                  const entOrigem = entidades.find(e => e.nome === form.origem);
-                  const isOp = entOrigem?.roles.includes("operador");
-                  const showCofre = form.descricao === "Recebeu de" && isOp && form.destino === "Lotérica";
-                  if (!showCofre) return null;
-                  return (
-                    <div className="form-group" style={{gridColumn:"span 2"}}>
-                      <label style={{display:"flex",alignItems:"center",gap:".6rem",cursor:"pointer",
-                        border:"0.5px solid var(--accent)",borderRadius:"var(--radius)",
-                        padding:".5rem .8rem",background:"var(--accent-dim)"}}>
-                        <input type="checkbox" checked={form.registrarCofre||false}
-                          onChange={e=>setForm(f=>({...f,registrarCofre:e.target.checked}))}
-                          style={{width:15,height:15,cursor:"pointer",accentColor:"var(--accent)"}}/>
-                        <span style={{fontSize:".82rem",fontWeight:600,color:"var(--accent)"}}>Registrar no Cofre</span>
-                        <span style={{fontSize:".72rem",fontFamily:"var(--font-mono)",color:"var(--danger)",marginLeft:"auto"}}>↓ Saída</span>
-                      </label>
-                    </div>
-                  );
-                })()}
                 <div className="form-group">
                   <label className="form-label">&nbsp;</label>
                   <button className="btn btn-accent" onClick={handleAdd}>+ Registrar</button>
