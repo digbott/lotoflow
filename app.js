@@ -438,7 +438,7 @@ function App({ onLogout, userEmail }) {
     });
     // Se "Recebeu de" com Operador + origem Lotérica e checkbox marcado → saída no Cofre
     if (form.registrarCofre) {
-      const novoCofre = { id: genId(), tipo:"saida", valor: parseInput(form.valor), data: form.data, descricao:`${origemFinal||"—"} · Recebeu de · ${destinoFinal||"—"}`, origem:"auto" };
+      const novoCofre = { id: novaT.id, tipo:"saida", valor: parseInput(form.valor), data: form.data, descricao:`${origemFinal||"—"} · Recebeu de · ${destinoFinal||"—"}`, origem:"auto" };
       setCofreManual(prev => { const next = [...prev, novoCofre]; savePatch({ cofreManual: next }); return next; });
     }
     setForm(f => ({ ...f, descricao:"", descricao_livre:"", origem:"", destino:"", valor:"", data:today(), observacao:"", registrarCofre:false }));
@@ -459,6 +459,7 @@ function App({ onLogout, userEmail }) {
     });
     if (!ok) return;
     setTransacoes(prev => { const next=prev.filter(x=>x.id!==id); savePatch({transacoes:next}); return next; });
+    setCofreManual(prev => { const next=prev.filter(x=>x.id!==id); savePatch({cofreManual:next}); return next; });
     addToast("Lançamento excluído.", "ok");
   }, [confirm, savePatch, addToast]);
 
