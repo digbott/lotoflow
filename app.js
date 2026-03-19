@@ -1339,7 +1339,7 @@ function App({ onLogout, userEmail }) {
                           </td>
                           <td className={`val-${c.tipo}`}>{c.tipo==="entrada"?"+":"-"}{formatCurrency(c.valor)}</td>
                           <td>
-                            {c.origem==="manual" && (
+                            {(c.origem==="manual" || (c.origem==="auto" && !transacoes.find(t=>t.id===c.id))) && (
                               <button className="btn btn-danger" style={{padding:".3rem .7rem",fontSize:".75rem"}}
                                 onClick={()=>deleteCofreManual(c.id)}>✕</button>
                             )}
