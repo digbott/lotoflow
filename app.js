@@ -230,6 +230,12 @@ function App({ onLogout, userEmail }) {
   const [cofreManual, setCofreManual] = useState([]);
   const [cofreForm,   setCofreForm]   = useState({ tipo:"entrada", valor:"", data:today(), descricao:"" });
 
+  // ── [F18] Estado: Limpeza seletiva de histórico ───────────────────────────
+  const [limparForm, setLimparForm] = useState({
+    dataInicio:"", dataFim:"",
+    categorias:{ transacoes:true, debitos:true, emprestimos:true, cofre:true },
+  });
+
   // Derivados do Cofre
   const cofreAutoItems = useMemo(() => {
     const items = [];
@@ -528,6 +534,72 @@ function App({ onLogout, userEmail }) {
     setCofreManual(prev => { const next=prev.filter(x=>x.id!==id); savePatch({cofreManual:next}); return next; });
     addToast("Lançamento removido.", "ok");
   }, [confirm, savePatch, addToast]);
+
+  // ── [F18] Limpeza seletiva de histórico (por período e categoria) ────────
+  const dentroPeriodo = useCallback((data) => {
+    const { dataInicio, dataFim } = limparForm;
+    if (dataInicio && data < dataInicio) return false;
+    if (dataFim && data > dataFim) return false;
+    return true;
+  }, [limparForm]);
+
+  const limparPreview = useMemo(() => {
+    const { categorias } = limparForm;
+    let n = 0;
+    if (categorias.transacoes)  n += transacoes.filter(t=>dentroPeriodo(t.data)).length;
+    if (categorias.debitos)     n += debitos.filter(d=>dentroPeriodo(d.data)).length;
+    if (categorias.emprestimos) n += emprestimos.filter(e=>dentroPeriodo(e.data)).length;
+    if (categorias.cofre)       n += cofreManual.filter(c=>dentroPeriodo(c.data)).length;
+    return n;
+  }, [transacoes, debitos, emprestimos, cofreManual, limparForm, dentroPeriodo]);
+
+  const limparHistorico = useCallback(async () => {
+    const { dataInicio, dataFim, categorias } = limparForm;
+    if (!categorias.transacoes && !categorias.debitos && !categorias.emprestimos && !categorias.cofre) {
+      addToast("Selecione ao menos uma categoria.", "aviso");
+      return;
+    }
+    if (limparPreview === 0) {
+      addToast("Nenhum registro encontrado no período/categorias selecionados.", "aviso");
+      return;
+    }
+    const periodoLabel = (dataInicio || dataFim)
+      ? `de ${dataInicio ? formatDate(dataInicio) : "o início"} até ${dataFim ? formatDate(dataFim) : "hoje"}`
+      : "de todo o período";
+    const partes = [];
+    if (categorias.transacoes)  partes.push("lançamentos");
+    if (categorias.debitos)     partes.push("débitos");
+    if (categorias.emprestimos) partes.push("empréstimos");
+    if (categorias.cofre)       partes.push("lançamentos do cofre");
+
+    const ok = await confirm({
+      title: "Excluir registros selecionados?",
+      message: `Serão apagados permanentemente ${limparPreview} registro(s) — ${partes.join(", ")} — ${periodoLabel}. Pessoas, entidades e tipos cadastrados NÃO serão afetados. Esta ação não pode ser desfeita.`,
+      confirmLabel: "Excluir",
+      icon: "🗑️",
+    });
+    if (!ok) return;
+
+    const patch = {};
+    if (categorias.transacoes) {
+      const next = transacoes.filter(t=>!dentroPeriodo(t.data));
+      setTransacoes(next); patch.transacoes = next;
+    }
+    if (categorias.debitos) {
+      const next = debitos.filter(d=>!dentroPeriodo(d.data));
+      setDebitos(next); patch.debitos = next;
+    }
+    if (categorias.emprestimos) {
+      const next = emprestimos.filter(e=>!dentroPeriodo(e.data));
+      setEmprestimos(next); patch.emprestimos = next;
+    }
+    if (categorias.cofre) {
+      const next = cofreManual.filter(c=>!dentroPeriodo(c.data));
+      setCofreManual(next); patch.cofreManual = next;
+    }
+    savePatch(patch);
+    addToast(`${limparPreview} registro(s) excluído(s).`, "ok");
+  }, [confirm, savePatch, addToast, limparForm, limparPreview, dentroPeriodo, transacoes, debitos, emprestimos, cofreManual]);
 
   // ── [F8] Dados do dashboard ───────────────────────────────────────────────
   const dashboardData = useMemo(() => {
@@ -1503,6 +1575,49 @@ function App({ onLogout, userEmail }) {
                   setEntidades(prev=>{const next=[...prev,{nome,roles:cadNewEnt.roles}];savePatch({entidades:next});return next;});
                   setCadNewEnt({nome:"",roles:["entidade"]});
                 }}>+ Adicionar</button>
+              </div>
+            </div>
+
+            {/* [F18] Zona de Perigo — exclusão seletiva por período e categoria */}
+            <div className="section-title" style={{color:"var(--danger)"}}>Zona de Perigo</div>
+            <div className="form-card" style={{border:"1px solid rgba(220,38,38,.3)",background:"var(--danger-dim)"}}>
+              <div style={{fontWeight:700,fontSize:".9rem",color:"var(--danger)",marginBottom:".25rem"}}>Excluir histórico de movimentações</div>
+              <div style={{fontSize:".78rem",color:"var(--text-secondary)",marginBottom:"1.1rem",maxWidth:560}}>
+                Escolha o período e quais categorias excluir. Deixe as datas em branco para excluir de todo o período.
+                Pessoas, entidades e tipos cadastrados nunca são afetados por esta ação.
+              </div>
+
+              <div className="form-grid" style={{marginBottom:"1rem"}}>
+                <div className="form-group">
+                  <label className="form-label">De <span style={{fontWeight:400,color:"var(--text-tertiary)"}}>(opcional)</span></label>
+                  <input className="form-input" type="date" value={limparForm.dataInicio}
+                    onChange={e=>setLimparForm(f=>({...f,dataInicio:e.target.value}))}/>
+                </div>
+                <div className="form-group">
+                  <label className="form-label">Até <span style={{fontWeight:400,color:"var(--text-tertiary)"}}>(opcional)</span></label>
+                  <input className="form-input" type="date" value={limparForm.dataFim}
+                    onChange={e=>setLimparForm(f=>({...f,dataFim:e.target.value}))}/>
+                </div>
+              </div>
+
+              <div className="kpi-label" style={{marginBottom:".5rem"}}>O que excluir</div>
+              <div style={{display:"flex",gap:"1.1rem",flexWrap:"wrap",marginBottom:"1.25rem"}}>
+                {[["transacoes","Lançamentos"],["debitos","Débitos"],["emprestimos","Empréstimos"],["cofre","Cofre (manual)"]].map(([k,l])=>(
+                  <label key={k} style={{display:"flex",alignItems:"center",gap:".4rem",fontSize:".82rem",color:"var(--text-secondary)",cursor:"pointer"}}>
+                    <input type="checkbox" checked={limparForm.categorias[k]}
+                      onChange={e=>setLimparForm(f=>({...f,categorias:{...f.categorias,[k]:e.target.checked}}))}/>
+                    {l}
+                  </label>
+                ))}
+              </div>
+
+              <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",gap:"1rem",flexWrap:"wrap",paddingTop:".9rem",borderTop:"1px solid rgba(220,38,38,.2)"}}>
+                <span style={{fontFamily:"var(--font-mono)",fontSize:".75rem",color:"var(--danger)"}}>
+                  {limparPreview} registro(s) serão excluídos
+                </span>
+                <button className="btn btn-danger" style={{fontWeight:700}} disabled={limparPreview===0} onClick={limparHistorico}>
+                  🗑️ Excluir Selecionados
+                </button>
               </div>
             </div>
           </>
